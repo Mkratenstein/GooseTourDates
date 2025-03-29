@@ -83,7 +83,10 @@ def get_tour_dates():
                         r'https?://[^\s<>"]+?/api/[^\s<>"]+',
                         r'apiUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
                         r'baseUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'endpoint\s*=\s*[\'"]([^\'"]+)[\'"]'
+                        r'endpoint\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        r'url\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        r'baseURL\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        r'API_URL\s*=\s*[\'"]([^\'"]+)[\'"]'
                     ]
                     
                     for pattern in api_patterns:
@@ -96,7 +99,9 @@ def get_tour_dates():
                     init_patterns = [
                         r'new\s+SeatedWidget\(([^)]+)\)',
                         r'SeatedWidget\.init\(([^)]+)\)',
-                        r'seated\.init\(([^)]+)\)'
+                        r'seated\.init\(([^)]+)\)',
+                        r'window\.seated\s*=\s*({[^}]+})',
+                        r'seated\.config\s*=\s*({[^}]+})'
                     ]
                     
                     for pattern in init_patterns:
@@ -112,6 +117,22 @@ def get_tour_dates():
                             except:
                                 pass
                     
+                    # Look for API request patterns
+                    request_patterns = [
+                        r'fetch\([\'"]([^\'"]+)[\'"]',
+                        r'axios\.get\([\'"]([^\'"]+)[\'"]',
+                        r'\.get\([\'"]([^\'"]+)[\'"]',
+                        r'\.post\([\'"]([^\'"]+)[\'"]'
+                    ]
+                    
+                    for pattern in request_patterns:
+                        matches = re.findall(pattern, app_js_content)
+                        if matches:
+                            logger.info(f"Found API request patterns: {matches}")
+                            for match in matches:
+                                if '/api/' in match:
+                                    discovered_endpoints.append(match)
+                    
                 except Exception as e:
                     logger.error(f"Error fetching app.js: {e}")
             
@@ -122,7 +143,11 @@ def get_tour_dates():
                 f"https://widget.seated.com/api/v1/artists/{artist_id}/shows",
                 f"https://widget.seated.com/api/v2/artists/{artist_id}/shows",
                 f"https://widget.seated.com/api/artists/{artist_id}/events",
-                f"https://widget.seated.com/api/artists/{artist_id}/shows"
+                f"https://widget.seated.com/api/artists/{artist_id}/shows",
+                f"https://api.seated.com/v1/artists/{artist_id}/events",
+                f"https://api.seated.com/v2/artists/{artist_id}/events",
+                f"https://api.seated.com/v1/artists/{artist_id}/shows",
+                f"https://api.seated.com/v2/artists/{artist_id}/shows"
             ]
             
             # Add any endpoints found in app.js
@@ -192,6 +217,17 @@ def get_tour_dates():
                                     logger.info(f"Found potential API URLs in HTML: {api_urls}")
                                     # Add these URLs to our endpoints list
                                     base_endpoints.extend(api_urls)
+                                
+                                # Look for widget configuration in HTML
+                                widget_config_match = re.search(r'window\.seated\s*=\s*({[^}]+})', html_content)
+                                if widget_config_match:
+                                    try:
+                                        config = json.loads(widget_config_match.group(1))
+                                        widget_config.update(config)
+                                        logger.info(f"Updated widget configuration from HTML: {widget_config}")
+                                    except:
+                                        pass
+                            
                             logger.warning(f"Received HTML response for endpoint {current_url}, trying next...")
                             continue
                         
