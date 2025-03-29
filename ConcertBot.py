@@ -56,12 +56,20 @@ def get_tour_dates():
             artist_id = seated_widget.get('data-artist-id')
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
-            # Try to fetch from Seated widget's API
-            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
+            # Try different API endpoints
+            api_endpoints = [
+                f"https://widget.seated.com/api/v1/artists/{artist_id}/events",
+                f"https://widget.seated.com/api/v2/artists/{artist_id}/events",
+                f"https://widget.seated.com/api/v1/artists/{artist_id}/shows",
+                f"https://widget.seated.com/api/v2/artists/{artist_id}/shows",
+                f"https://widget.seated.com/api/artists/{artist_id}/events",
+                f"https://widget.seated.com/api/artists/{artist_id}/shows"
+            ]
+            
             seated_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://www.goosetheband.com',
                 'Referer': 'https://www.goosetheband.com/tour',
                 'Connection': 'keep-alive',
@@ -72,15 +80,16 @@ def get_tour_dates():
                 'Cache-Control': 'no-cache',
                 'Pragma': 'no-cache',
                 'X-Requested-With': 'XMLHttpRequest',
-                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
+                'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
                 'sec-ch-ua-mobile': '?0',
                 'sec-ch-ua-platform': '"Windows"',
                 'Authorization': 'Bearer null',
                 'X-Seated-Widget-Version': '3',
-                'X-Seated-Environment': 'development',
+                'X-Seated-Environment': 'production',
                 'DNT': '1',
                 'TE': 'trailers',
-                'Accept-Encoding': 'gzip, deflate, br'
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Host': 'widget.seated.com'
             }
             
             # List of artist IDs to try
@@ -91,73 +100,88 @@ def get_tour_dates():
             ]
             
             for current_artist_id in artist_ids_to_try:
-                try:
-                    current_url = f"https://widget.seated.com/api/v1/artists/{current_artist_id}/events"
-                    logger.info(f"Trying Seated API with artist ID: {current_artist_id}")
-                    
-                    seated_response = session.get(current_url, headers=seated_headers)
-                    seated_response.raise_for_status()
-                    
-                    # Log response details for debugging
-                    logger.info(f"Seated API response status: {seated_response.status_code}")
-                    logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
-                    
-                    # Check if response is HTML
-                    content_type = seated_response.headers.get('Content-Type', '')
-                    if 'text/html' in content_type:
-                        logger.warning(f"Received HTML response for artist ID {current_artist_id}, trying next ID...")
-                        continue
-                    
-                    # Try to parse the response as JSON
+                for endpoint in api_endpoints:
                     try:
-                        seated_data = seated_response.json()
+                        current_url = endpoint.replace('{artist_id}', current_artist_id)
+                        logger.info(f"Trying Seated API endpoint: {current_url}")
                         
-                        if isinstance(seated_data, list):
-                            tour_dates = []
-                            for event in seated_data:
-                                try:
-                                    # Extract date
-                                    date_text = event.get('date', '')
-                                    if not date_text and event.get('start_time'):
-                                        date = datetime.fromtimestamp(int(event['start_time']))
-                                        date_text = date.strftime('%B %d, %Y')
-                                    
-                                    # Extract venue and location
-                                    venue_text = event.get('venue', {}).get('name', 'Venue TBA')
-                                    city = event.get('venue', {}).get('city', '')
-                                    state = event.get('venue', {}).get('state', '')
-                                    location_text = f"{city}, {state}" if city and state else "Location TBA"
-                                    
-                                    if date_text and venue_text and location_text:
-                                        logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
-                                        tour_dates.append({
-                                            'date': date_text,
-                                            'venue': venue_text,
-                                            'location': location_text
-                                        })
-                                except Exception as e:
-                                    logger.error(f"Error processing Seated event: {e}")
-                                    continue
+                        # Add a small delay between requests
+                        time.sleep(1)
+                        
+                        seated_response = session.get(current_url, headers=seated_headers)
+                        seated_response.raise_for_status()
+                        
+                        # Log response details for debugging
+                        logger.info(f"Seated API response status: {seated_response.status_code}")
+                        logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
+                        
+                        # Check if response is HTML
+                        content_type = seated_response.headers.get('Content-Type', '')
+                        if 'text/html' in content_type:
+                            # Try to extract API endpoint from HTML
+                            html_content = seated_response.text
+                            if 'app.js' in html_content:
+                                logger.info("Found app.js reference in HTML response")
+                                # Look for any API-related URLs in the HTML
+                                import re
+                                api_urls = re.findall(r'https?://[^\s<>"]+?/api/[^\s<>"]+', html_content)
+                                if api_urls:
+                                    logger.info(f"Found potential API URLs in HTML: {api_urls}")
+                                    # Add these URLs to our endpoints list
+                                    api_endpoints.extend(api_urls)
+                            logger.warning(f"Received HTML response for endpoint {current_url}, trying next...")
+                            continue
+                        
+                        # Try to parse the response as JSON
+                        try:
+                            seated_data = seated_response.json()
                             
-                            if tour_dates:
-                                return tour_dates
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse Seated API response as JSON: {e}")
-                        logger.error(f"Raw response content: {seated_response.text[:1000]}")  # Log first 1000 chars
+                            if isinstance(seated_data, list):
+                                tour_dates = []
+                                for event in seated_data:
+                                    try:
+                                        # Extract date
+                                        date_text = event.get('date', '')
+                                        if not date_text and event.get('start_time'):
+                                            date = datetime.fromtimestamp(int(event['start_time']))
+                                            date_text = date.strftime('%B %d, %Y')
+                                        
+                                        # Extract venue and location
+                                        venue_text = event.get('venue', {}).get('name', 'Venue TBA')
+                                        city = event.get('venue', {}).get('city', '')
+                                        state = event.get('venue', {}).get('state', '')
+                                        location_text = f"{city}, {state}" if city and state else "Location TBA"
+                                        
+                                        if date_text and venue_text and location_text:
+                                            logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
+                                            tour_dates.append({
+                                                'date': date_text,
+                                                'venue': venue_text,
+                                                'location': location_text
+                                            })
+                                    except Exception as e:
+                                        logger.error(f"Error processing Seated event: {e}")
+                                        continue
+                                
+                                if tour_dates:
+                                    return tour_dates
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse Seated API response as JSON: {e}")
+                            logger.error(f"Raw response content: {seated_response.text[:1000]}")  # Log first 1000 chars
+                            continue
+                            
+                    except requests.exceptions.RequestException as e:
+                        logger.error(f"Error fetching Seated data for endpoint {current_url}: {e}")
+                        if hasattr(e, 'response') and e.response is not None:
+                            logger.error(f"Seated response status: {e.response.status_code}")
+                            logger.error(f"Seated response headers: {e.response.headers}")
+                            logger.error(f"Seated response content: {e.response.text[:1000]}")
                         continue
-                        
-                except requests.exceptions.RequestException as e:
-                    logger.error(f"Error fetching Seated data for artist ID {current_artist_id}: {e}")
-                    if hasattr(e, 'response') and e.response is not None:
-                        logger.error(f"Seated response status: {e.response.status_code}")
-                        logger.error(f"Seated response headers: {e.response.headers}")
-                        logger.error(f"Seated response content: {e.response.text[:1000]}")
-                    continue
-                except Exception as e:
-                    logger.error(f"Unexpected error with Seated API for artist ID {current_artist_id}: {e}")
-                    import traceback
-                    logger.error(f"Traceback: {traceback.format_exc()}")
-                    continue
+                    except Exception as e:
+                        logger.error(f"Unexpected error with Seated API for endpoint {current_url}: {e}")
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        continue
         
         # If Seated API fails, try parsing the HTML directly
         logger.info("Attempting to parse HTML directly...")
