@@ -422,48 +422,43 @@ if __name__ == "__main__":
         try:
             # Add initial delay with jitter before first attempt
             if attempt == 0:
-                initial_delay = random.uniform(60, 120)  # Much longer initial delay (1-2 minutes)
+                initial_delay = random.uniform(120, 180)  # Even longer initial delay (2-3 minutes)
                 print(f"Initial startup delay: {initial_delay:.2f} seconds")
                 time.sleep(initial_delay)
             else:
                 # Exponential backoff with jitter for subsequent attempts
-                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(30, 60), MAX_RETRY_DELAY)
+                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(60, 120), MAX_RETRY_DELAY)
                 print(f"Waiting {delay:.2f} seconds before next attempt...")
                 time.sleep(delay)
             
             print(f"Attempting to start bot (attempt {attempt + 1}/{MAX_RETRIES})")
             
             # Create a new event loop for each attempt
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # Set up the bot with proper rate limit handling
-                bot._connection.http.rate_limit = True
-                bot._connection.http.max_retries = MAX_RETRIES
-                
-                # Start the bot
-                loop.run_until_complete(bot.start(DISCORD_TOKEN))
+                # Start the bot with a timeout
+                loop.run_until_complete(asyncio.wait_for(bot.start(DISCORD_TOKEN), timeout=30))
                 print("Bot started successfully!")
                 break
+            except asyncio.TimeoutError:
+                print("Bot startup timed out")
+                loop.close()
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                continue
             except Exception as e:
                 print(f"Error during bot startup: {e}")
-                if loop and not loop.is_closed():
-                    loop.close()
+                loop.close()
                 if attempt == MAX_RETRIES - 1:
                     raise
                 continue
             finally:
-                # Clean up the event loop
                 try:
-                    if loop and not loop.is_closed():
-                        pending = asyncio.all_tasks(loop)
-                        for task in pending:
-                            task.cancel()
-                        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                        loop.close()
-                except Exception as e:
-                    print(f"Error cleaning up event loop: {e}")
+                    loop.close()
+                except:
+                    pass
                 
         except discord.HTTPException as e:
             if e.code == 429 and attempt < MAX_RETRIES - 1:
