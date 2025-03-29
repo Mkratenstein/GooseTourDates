@@ -10,6 +10,7 @@ import json
 import asyncio
 import time
 import random
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -29,8 +30,8 @@ TOUR_DATES_FILE = 'previous_tour_dates.json'
 
 # Rate limit handling
 MAX_RETRIES = 5
-INITIAL_RETRY_DELAY = 5  # Increased initial delay
-MAX_RETRY_DELAY = 60  # Maximum delay between retries
+INITIAL_RETRY_DELAY = 30  # Increased initial delay
+MAX_RETRY_DELAY = 300  # Maximum delay between retries (5 minutes)
 
 async def retry_with_backoff(func, *args, **kwargs):
     retry_delay = INITIAL_RETRY_DELAY
@@ -294,18 +295,44 @@ if __name__ == "__main__":
         try:
             # Add initial delay with jitter before first attempt
             if attempt == 0:
-                initial_delay = random.uniform(3, 7)
+                initial_delay = random.uniform(20, 40)  # Longer initial delay
                 print(f"Initial startup delay: {initial_delay:.2f} seconds")
                 time.sleep(initial_delay)
+            else:
+                # Exponential backoff with jitter for subsequent attempts
+                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(10, 20), MAX_RETRY_DELAY)
+                print(f"Waiting {delay:.2f} seconds before next attempt...")
+                time.sleep(delay)
             
             print(f"Attempting to start bot (attempt {attempt + 1}/{MAX_RETRIES})")
-            bot.run(DISCORD_TOKEN)
-            break
+            
+            # Create a new event loop for each attempt
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                loop.run_until_complete(bot.start(DISCORD_TOKEN))
+                print("Bot started successfully!")
+                break
+            except Exception as e:
+                print(f"Error during bot startup: {e}")
+                loop.close()
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                continue
+            finally:
+                try:
+                    loop.close()
+                except:
+                    pass
+                
         except discord.HTTPException as e:
             if e.code == 429 and attempt < MAX_RETRIES - 1:
-                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(0, 2), MAX_RETRY_DELAY)
-                print(f"Rate limited on startup. Retrying in {delay:.2f} seconds...")
-                time.sleep(delay)
+                print(f"Rate limited on startup. Will retry with exponential backoff.")
+                continue
             else:
                 print(f"Failed to start bot after {MAX_RETRIES} attempts")
-                raise
+                sys.exit(1)
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            sys.exit(1)
