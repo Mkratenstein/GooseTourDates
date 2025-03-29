@@ -381,7 +381,8 @@ async def tour_dates(interaction: discord.Interaction, month: str = None):
         return
     
     try:
-        await interaction.response.defer(ephemeral=True)
+        # Only use ephemeral if no month is specified
+        await interaction.response.defer(ephemeral=(month is None))
     except:
         logger.error("Failed to defer interaction")
         return
