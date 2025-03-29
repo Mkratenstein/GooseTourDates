@@ -6,6 +6,7 @@ import os
 import time
 import logging
 from dotenv import load_dotenv
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -27,15 +28,15 @@ def get_tour_dates():
         
         # First visit the main page to get any necessary cookies
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Language': 'en-US,en;q=0.9',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache',
             'Referer': 'https://www.goosetheband.com/',
-            'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
+            'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
             'sec-ch-ua-mobile': '?0',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
@@ -71,12 +72,11 @@ def get_tour_dates():
                 
                 try:
                     # Fetch app.js
-                    app_js_response = session.get(app_js_url, headers=seated_headers)
+                    app_js_response = session.get(app_js_url, headers=headers)
                     app_js_response.raise_for_status()
                     app_js_content = app_js_response.text
                     
                     # Look for API endpoints in app.js
-                    import re
                     api_patterns = [
                         r'https?://[^\s<>"]+?/api/[^\s<>"]+',
                         r'apiUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
@@ -115,7 +115,7 @@ def get_tour_dates():
                     logger.error(f"Error fetching app.js: {e}")
             
             # Try different API endpoints
-            api_endpoints = [
+            base_endpoints = [
                 f"https://widget.seated.com/api/v1/artists/{artist_id}/events",
                 f"https://widget.seated.com/api/v2/artists/{artist_id}/events",
                 f"https://widget.seated.com/api/v1/artists/{artist_id}/shows",
@@ -126,7 +126,7 @@ def get_tour_dates():
             
             # Add any endpoints found in app.js
             if api_endpoints:
-                api_endpoints.extend(api_endpoints)
+                base_endpoints.extend(api_endpoints)
             
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -162,7 +162,7 @@ def get_tour_dates():
             ]
             
             for current_artist_id in artist_ids_to_try:
-                for endpoint in api_endpoints:
+                for endpoint in base_endpoints:
                     try:
                         current_url = endpoint.replace('{artist_id}', current_artist_id)
                         logger.info(f"Trying Seated API endpoint: {current_url}")
@@ -189,7 +189,7 @@ def get_tour_dates():
                                 if api_urls:
                                     logger.info(f"Found potential API URLs in HTML: {api_urls}")
                                     # Add these URLs to our endpoints list
-                                    api_endpoints.extend(api_urls)
+                                    base_endpoints.extend(api_urls)
                             logger.warning(f"Received HTML response for endpoint {current_url}, trying next...")
                             continue
                         
