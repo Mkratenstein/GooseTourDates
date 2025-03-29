@@ -169,30 +169,63 @@ async def tour_dates(interaction: discord.Interaction):
 def get_tour_dates():
     url = "https://www.goosetheband.com/tour"
     try:
+        print("Fetching tour dates from website...")
         response = requests.get(url)
         response.raise_for_status()
+        print(f"Response status code: {response.status_code}")
+        
         soup = BeautifulSoup(response.text, 'html.parser')
+        print("Successfully parsed HTML")
+        
+        # Print the HTML content for debugging
+        print("HTML Content Preview:")
+        print(soup.prettify()[:500])  # Print first 500 chars for debugging
         
         tour_dates = []
+        # Update selectors based on actual website structure
         events = soup.find_all('div', class_='tour-date')
+        print(f"Found {len(events)} tour date elements")
         
         for event in events:
-            date = event.find('div', class_='date').text.strip()
-            venue = event.find('div', class_='venue').text.strip()
-            location = event.find('div', class_='location').text.strip()
+            try:
+                date = event.find('div', class_='date')
+                venue = event.find('div', class_='venue')
+                location = event.find('div', class_='location')
+                
+                if not all([date, venue, location]):
+                    print("Missing required elements in event")
+                    continue
+                
+                date_text = date.text.strip()
+                venue_text = venue.text.strip()
+                location_text = location.text.strip()
+                
+                print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
+                
+                tour_dates.append({
+                    'date': date_text,
+                    'venue': venue_text,
+                    'location': location_text
+                })
+            except Exception as e:
+                print(f"Error processing event: {e}")
+                continue
+        
+        if not tour_dates:
+            print("No tour dates found in the parsed HTML")
+            return None
             
-            tour_dates.append({
-                'date': date,
-                'venue': venue,
-                'location': location
-            })
-            
+        print(f"Successfully found {len(tour_dates)} tour dates")
         return tour_dates
+        
     except requests.RequestException as e:
         print(f"Error fetching tour dates: {e}")
+        print(f"Response content: {e.response.text if hasattr(e, 'response') else 'No response content'}")
         return None
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in get_tour_dates: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return None
 
 if __name__ == "__main__":
