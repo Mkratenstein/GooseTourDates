@@ -58,48 +58,85 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         # Send the header message first
         await interaction.followup.send(messages[0], ephemeral=True)
         
-        # Send each month's message
+        # Send each message
         for message in messages[1:]:
             # Split message into chunks if needed
             if len(message) > 1900:  # Leave some buffer for formatting
-                # Split by month header
-                parts = message.split("\n**")
-                current_chunk = parts[0]
+                # Split by event separator
+                events = message.split("───")
+                current_chunk = events[0]
                 
-                for part in parts[1:]:
-                    # Add back the month header
-                    part = "**" + part
-                    
-                    # If this part would exceed the limit, split it by events
-                    if len(current_chunk + "\n" + part) > 1900:
-                        # Split by event separator
-                        events = part.split("───")
-                        event_chunk = events[0]
-                        
-                        for event in events[1:]:
-                            event = "───" + event
-                            if len(current_chunk + "\n" + event_chunk + "\n" + event) > 1900:
-                                # Send current chunk and start new one
-                                await interaction.followup.send(current_chunk, ephemeral=True)
-                                current_chunk = event_chunk + "\n" + event
+                for event in events[1:]:
+                    event = "───" + event
+                    # Check if adding this event would exceed the limit
+                    if len(current_chunk + "\n" + event) > 1900:
+                        try:
+                            # Send current chunk
+                            await interaction.followup.send(current_chunk, ephemeral=True)
+                            # Start new chunk with the current event
+                            current_chunk = event
+                        except discord.HTTPException as e:
+                            if e.code == 50035:  # Message too long
+                                # Try to split the event itself
+                                event_lines = event.split("\n")
+                                current_chunk = event_lines[0]
+                                
+                                for line in event_lines[1:]:
+                                    if len(current_chunk + "\n" + line) > 1900:
+                                        await interaction.followup.send(current_chunk, ephemeral=True)
+                                        current_chunk = line
+                                    else:
+                                        current_chunk += "\n" + line
                             else:
-                                event_chunk += "\n" + event
-                        
-                        # Send the last event chunk
-                        if event_chunk:
-                            await interaction.followup.send(event_chunk, ephemeral=True)
-                            current_chunk = ""
+                                raise  # Re-raise if it's a different error
                     else:
-                        current_chunk += "\n" + part
+                        current_chunk += "\n" + event
                 
                 # Send any remaining content
                 if current_chunk:
-                    await interaction.followup.send(current_chunk, ephemeral=True)
+                    try:
+                        await interaction.followup.send(current_chunk, ephemeral=True)
+                    except discord.HTTPException as e:
+                        if e.code == 50035:  # Message too long
+                            # Split the remaining content into smaller chunks
+                            lines = current_chunk.split("\n")
+                            current_chunk = lines[0]
+                            
+                            for line in lines[1:]:
+                                if len(current_chunk + "\n" + line) > 1900:
+                                    await interaction.followup.send(current_chunk, ephemeral=True)
+                                    current_chunk = line
+                                else:
+                                    current_chunk += "\n" + line
+                            
+                            if current_chunk:
+                                await interaction.followup.send(current_chunk, ephemeral=True)
+                        else:
+                            raise  # Re-raise if it's a different error
             else:
-                await interaction.followup.send(message, ephemeral=True)
+                try:
+                    await interaction.followup.send(message, ephemeral=True)
+                except discord.HTTPException as e:
+                    if e.code == 50035:  # Message too long
+                        # Even though we checked the length, something might have changed
+                        # Split the message into smaller chunks
+                        lines = message.split("\n")
+                        current_chunk = lines[0]
+                        
+                        for line in lines[1:]:
+                            if len(current_chunk + "\n" + line) > 1900:
+                                await interaction.followup.send(current_chunk, ephemeral=True)
+                                current_chunk = line
+                            else:
+                                current_chunk += "\n" + line
+                        
+                        if current_chunk:
+                            await interaction.followup.send(current_chunk, ephemeral=True)
+                    else:
+                        raise  # Re-raise if it's a different error
                 
     except Exception as e:
-        logger.error(f"Error sending monthly messages: {e}")
+        logger.error(f"Error sending messages: {e}")
         try:
             await interaction.followup.send(
                 "An error occurred while sending the tour dates. Please try again later.",

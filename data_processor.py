@@ -118,53 +118,34 @@ def get_formatted_tour_dates():
     # Sort dates chronologically using the first date for date ranges
     processed_dates.sort(key=lambda x: x['date'].split(" to ")[0])
     
-    # Group events by month for better readability
-    events_by_month = {}
-    
-    # First, group events by month
-    for date in processed_dates:
-        try:
-            # Get the month from the date
-            date_obj = datetime.strptime(date['date'].split(" to ")[0], "%Y-%m-%d")
-            month = date_obj.strftime("%B %Y")
-            
-            if month not in events_by_month:
-                events_by_month[month] = []
-            events_by_month[month].append(date)
-            
-        except Exception as e:
-            logger.error(f"Error processing date: {e}")
-            continue
-    
-    # Create separate messages for each month
+    # Create messages
     messages = []
     
     # Add header message with total count
     header_message = f"**Goose Tour Dates**\nFound {len(processed_dates)} upcoming shows:"
     messages.append(header_message)
     
-    # Create a message for each month
-    for month in sorted(events_by_month.keys()):
-        # Start with month header using bold
-        month_message = [
-            f"\n**{month}**",
-            "───"  # Use three dashes as separator
-        ]
-        
-        # Sort events within each month by date
-        month_events = sorted(events_by_month[month], 
-                           key=lambda x: x['date'].split(" to ")[0])
-        
-        # Format all events in this month
-        for date in month_events:
-            try:
-                month_message.append(format_event_output(date))
-                month_message.append("───")  # Add separator between events
-            except Exception as e:
-                logger.error(f"Error formatting event: {e}")
-                continue
-        
-        # Join the month message
-        messages.append("\n".join(month_message))
+    # Format all events
+    current_message = []
+    current_message.append("───")  # Add initial separator
+    
+    for event in processed_dates:
+        try:
+            event_text = format_event_output(event)
+            # Check if adding this event would exceed the limit
+            if len("\n".join(current_message) + "\n" + event_text + "\n───") > 1900:
+                # Send current message and start new one
+                messages.append("\n".join(current_message))
+                current_message = ["───", event_text, "───"]
+            else:
+                current_message.append(event_text)
+                current_message.append("───")
+        except Exception as e:
+            logger.error(f"Error formatting event: {e}")
+            continue
+    
+    # Add the last message if it has content
+    if len(current_message) > 1:  # More than just the separator
+        messages.append("\n".join(current_message))
     
     return messages 
