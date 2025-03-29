@@ -265,7 +265,6 @@ def main():
                 logger.info("=" * 50)
                 
                 # Group events by month for better readability
-                current_month = None
                 events_by_month = {}
                 
                 # First, group events by month
@@ -288,7 +287,11 @@ def main():
                     logger.info(f"\n{month}")
                     logger.info("-" * len(month))
                     
-                    for date in events_by_month[month]:
+                    # Sort events within each month by date
+                    month_events = sorted(events_by_month[month], 
+                                       key=lambda x: x['date'].split(" to ")[0])
+                    
+                    for date in month_events:
                         try:
                             # Print event details in a consistent order
                             logger.info(f"Date: {format_date_for_display(date['date'])}")
