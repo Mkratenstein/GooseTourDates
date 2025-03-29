@@ -82,30 +82,72 @@ def scrape_goose_tour_dates():
             # First wait for the body to be present
             wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
-            # Then wait for the tour container with a longer timeout
-            logger.info("Waiting for tour dates to load...")
-            try:
-                tour_container = wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "seated-event-row"))
-                )
-            except Exception as e:
-                logger.error(f"Timeout waiting for tour container: {e}")
+            # Try different selectors for the tour container
+            selectors = [
+                ".seated-event-row",
+                ".tour-date-row",
+                ".event-row",
+                "[class*='event']",
+                "[class*='tour']"
+            ]
+            
+            tour_container = None
+            for selector in selectors:
+                try:
+                    logger.info(f"Trying selector: {selector}")
+                    tour_container = wait.until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    if tour_container:
+                        logger.info(f"Found tour container with selector: {selector}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Selector {selector} not found: {e}")
+                    continue
+            
+            if not tour_container:
+                logger.error("Could not find tour container with any selector")
                 if attempt < max_retries - 1:
                     logger.info(f"Retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     continue
                 return None
             
-            # Add a small delay to ensure dynamic content is loaded
-            time.sleep(5)
+            # Add a longer delay to ensure dynamic content is loaded
+            time.sleep(10)
             
             # Extract tour data
             logger.info("Extracting tour dates...")
             tour_dates = []
             
-            # Find all event containers
-            event_elements = driver.find_elements(By.CSS_SELECTOR, ".seated-event-row")
-            logger.info(f"Found {len(event_elements)} event elements")
+            # Try different selectors for event elements
+            event_selectors = [
+                ".seated-event-row",
+                ".tour-date-row",
+                ".event-row",
+                "[class*='event']",
+                "[class*='tour']"
+            ]
+            
+            event_elements = []
+            for selector in event_selectors:
+                try:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        event_elements = elements
+                        logger.info(f"Found {len(elements)} event elements with selector: {selector}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Selector {selector} not found: {e}")
+                    continue
+            
+            if not event_elements:
+                logger.error("Could not find any event elements")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                return None
             
             # Track processed dates to prevent duplicates
             processed_dates = set()
@@ -116,10 +158,39 @@ def scrape_goose_tour_dates():
                     if "past-event" in event.get_attribute("class"):
                         continue
                     
-                    # Extract all information first before processing
-                    date_element = event.find_element(By.CSS_SELECTOR, ".seated-event-date-cell")
-                    venue_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-name")
-                    location_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-location")
+                    # Try different selectors for date, venue, and location
+                    date_selectors = [".seated-event-date-cell", ".date-cell", "[class*='date']"]
+                    venue_selectors = [".seated-event-venue-name", ".venue-name", "[class*='venue']"]
+                    location_selectors = [".seated-event-venue-location", ".venue-location", "[class*='location']"]
+                    
+                    # Find elements using multiple selectors
+                    date_element = None
+                    venue_element = None
+                    location_element = None
+                    
+                    for selector in date_selectors:
+                        try:
+                            date_element = event.find_element(By.CSS_SELECTOR, selector)
+                            if date_element:
+                                break
+                        except:
+                            continue
+                    
+                    for selector in venue_selectors:
+                        try:
+                            venue_element = event.find_element(By.CSS_SELECTOR, selector)
+                            if venue_element:
+                                break
+                        except:
+                            continue
+                    
+                    for selector in location_selectors:
+                        try:
+                            location_element = event.find_element(By.CSS_SELECTOR, selector)
+                            if location_element:
+                                break
+                        except:
+                            continue
                     
                     # Get the text values
                     date_str = date_element.text.strip() if date_element else ""
@@ -128,6 +199,7 @@ def scrape_goose_tour_dates():
                     
                     # Skip if we're missing essential information
                     if not all([date_str, venue, location]):
+                        logger.warning(f"Skipping event due to missing information: date={date_str}, venue={venue}, location={location}")
                         continue
                     
                     # Create a unique identifier for the event
@@ -140,20 +212,30 @@ def scrape_goose_tour_dates():
                     processed_dates.add(event_id)
                     
                     # Extract details info if present
-                    try:
-                        details_element = event.find_element(By.CSS_SELECTOR, ".seated-event-details-cell")
-                        details = details_element.text.strip()
-                    except:
-                        details = ""
+                    details = ""
+                    for selector in [".seated-event-details-cell", ".details-cell", "[class*='details']"]:
+                        try:
+                            details_element = event.find_element(By.CSS_SELECTOR, selector)
+                            details = details_element.text.strip()
+                            if details:
+                                break
+                        except:
+                            continue
                     
                     # Extract ticket links
                     ticket_links = []
-                    ticket_elements = event.find_elements(By.CSS_SELECTOR, ".seated-event-link")
-                    for ticket_element in ticket_elements:
-                        ticket_link = ticket_element.get_attribute("href")
-                        ticket_text = ticket_element.text.strip()
-                        if ticket_link and ticket_text:
-                            ticket_links.append(f"{ticket_text}: {ticket_link}")
+                    for selector in [".seated-event-link", ".ticket-link", "[class*='ticket']"]:
+                        try:
+                            ticket_elements = event.find_elements(By.CSS_SELECTOR, selector)
+                            for ticket_element in ticket_elements:
+                                ticket_link = ticket_element.get_attribute("href")
+                                ticket_text = ticket_element.text.strip()
+                                if ticket_link and ticket_text:
+                                    ticket_links.append(f"{ticket_text}: {ticket_link}")
+                            if ticket_links:
+                                break
+                        except:
+                            continue
                     
                     # Join ticket links with semicolons
                     ticket_links_str = "; ".join(ticket_links)

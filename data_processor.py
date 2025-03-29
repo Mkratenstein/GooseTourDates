@@ -1,6 +1,7 @@
 from datetime import datetime
 import logging
 from scraper import scrape_goose_tour_dates
+from cache_manager import load_from_cache, save_to_cache, is_cache_valid
 
 # Configure logging
 logging.basicConfig(
@@ -134,9 +135,28 @@ def get_available_months(tour_dates):
             months.add(event_month)
     return sorted(list(months), key=lambda x: datetime.strptime(x, "%B").month)
 
+def get_tour_dates():
+    """Get tour dates from cache or scrape if needed."""
+    # Try to load from cache first
+    cached_dates = load_from_cache()
+    if cached_dates:
+        logger.info("Using cached tour dates")
+        return cached_dates
+    
+    # If no valid cache, scrape new data
+    logger.info("No valid cache found, scraping new tour dates")
+    tour_dates = scrape_goose_tour_dates()
+    
+    if tour_dates:
+        # Save to cache for future use
+        save_to_cache(tour_dates)
+        return tour_dates
+    
+    return None
+
 def get_formatted_tour_dates(month=None):
     """Get and format tour dates for Discord output."""
-    tour_dates = scrape_goose_tour_dates()
+    tour_dates = get_tour_dates()
     
     if not tour_dates:
         return ["No tour dates found. The page structure may have changed."]

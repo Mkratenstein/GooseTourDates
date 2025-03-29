@@ -40,6 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all Python files
 COPY scraper.py .
 COPY data_processor.py .
+COPY cache_manager.py .
 COPY discord_bot.py .
 
 # Set environment variables
@@ -49,8 +50,8 @@ ENV PYTHONIOENCODING=utf-8
 ENV CHROME_BIN=/usr/bin/google-chrome
 ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
 
-# Create data directory
-RUN mkdir -p /data
+# Create data directory with proper permissions
+RUN mkdir -p /data && chmod 777 /data
 
 # Run the script with output redirection
 CMD ["python", "-u", "discord_bot.py"] 

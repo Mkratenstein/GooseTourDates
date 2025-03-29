@@ -1,40 +1,31 @@
 # Goose Tour Dates Discord Bot
 
-A Discord bot that scrapes and displays upcoming tour dates for the band Goose. The bot provides tour information in a clean, organized format with proper message length handling and error recovery.
+A Discord bot that provides information about upcoming Goose concert tour dates. The bot scrapes tour information from Goose's official website and provides it through Discord slash commands.
 
 ## Features
 
-- Scrapes tour dates from Goose's official website
-- Groups dates by month for better readability
-- Handles Discord message length limits automatically
-- Includes venue information, ticket links, and additional details
+- `/tourdates` command to view upcoming tour dates
+- Filter tour dates by month
+- Automatic caching of tour dates to reduce website load
+- Daily cache refresh to ensure data accuracy
 - Role-based access control
-- Automatic reconnection handling
-- Comprehensive error logging
-
-## Project Structure
-
-The project is split into three main Python files:
-
-- `scraper.py`: Handles web scraping functionality using Selenium
-- `data_processor.py`: Processes and formats the scraped data
-- `discord_bot.py`: Manages Discord bot functionality and message handling
+- Resilient error handling and automatic reconnection
 
 ## Prerequisites
 
 - Python 3.12 or higher
-- Chrome browser
-- ChromeDriver
 - Discord Bot Token
-- Required Python packages (listed in requirements.txt)
+- Chrome/Chromium browser (for web scraping)
+- ChromeDriver compatible with your Chrome version
 
 ## Environment Variables
 
 Create a `.env` file with the following variables:
 
 ```env
-# Discord Bot Configuration
-DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_TOKEN=your_discord_bot_token
+CHANNEL_ID=your_channel_id
+ANNOUNCEMENTS_CHANNEL_ID=your_announcements_channel_id
 ALLOWED_ROLE_IDS=role_id_1,role_id_2
 
 # Chrome Configuration
@@ -51,75 +42,81 @@ RAILWAY_DATA_DIR=/data
 
 ## Installation
 
-1. Clone the repository
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/goose-tour-dates-bot.git
+cd goose-tour-dates-bot
+```
+
 2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Set up Chrome and ChromeDriver:
-   - Install Chrome browser
-   - Download and install ChromeDriver matching your Chrome version
-   - Update the Chrome paths in your `.env` file if different from defaults
+```bash
+pip install -r requirements.txt
+```
 
-## Local Development
+3. Set up your environment variables in `.env`
 
-Run the bot locally:
+4. Run the bot:
 ```bash
 python discord_bot.py
 ```
 
 ## Docker Deployment
 
-The project includes a Dockerfile for containerized deployment:
+The project includes a Dockerfile for containerized deployment. To build and run:
 
-1. Build the Docker image:
-   ```bash
-   docker build -t goose-tour-bot .
-   ```
-
-2. Run the container:
-   ```bash
-   docker run -d --env-file .env goose-tour-bot
-   ```
+```bash
+docker build -t goose-tour-dates-bot .
+docker run -d --env-file .env goose-tour-dates-bot
+```
 
 ## Railway Deployment
 
-The project is configured for deployment on Railway:
-
-1. Connect your GitHub repository to Railway
-2. Set up the environment variables in Railway's dashboard
-3. Deploy using the provided Dockerfile
+1. Push your code to GitHub
+2. Connect your repository to Railway
+3. Add the required environment variables in Railway's dashboard
+4. Deploy!
 
 ## Usage
 
-The bot provides a slash command `/tourdates` that:
-- Requires specific Discord roles to use
-- Returns tour dates grouped by month
-- Handles long messages by splitting them appropriately
-- Provides venue information and ticket links
-- Includes additional details when available
+The bot provides the following slash command:
+
+- `/tourdates [month]` - Get upcoming tour dates. If no month is specified, shows available months.
+
+## Permissions
+
+Users need one of the following roles to use the bot:
+- Goose Tour Dates
+- Goose Tour Dates Admin
 
 ## Error Handling
 
 The bot includes comprehensive error handling for:
-- Connection issues
-- Message length limits
-- Web scraping failures
-- Role permission issues
-- Chrome/ChromeDriver problems
+- Network issues
+- Website structure changes
+- Rate limiting
+- Permission issues
+- Connection resets
 
 ## Logging
 
-Logs are written to `goose_tour_dates.log` with timestamps and log levels for debugging.
+Logs are written to both:
+- Console output
+- `goose_tour_dates.log` file
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [Goose](https://www.goosetheband.com/) for providing tour information
+- [Discord.py](https://discordpy.readthedocs.io/) for the Discord API wrapper
+- [Selenium](https://www.selenium.dev/) for web scraping capabilities
