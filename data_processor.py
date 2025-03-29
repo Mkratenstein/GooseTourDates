@@ -177,7 +177,7 @@ def get_formatted_tour_dates(month=None):
             return ["No upcoming tour dates found."]
             
         message = "**Goose Tour Dates**\n"
-        message += "Goose is playing during these months:\n"
+        message += "Goose has announced that the Organization is playing during these months:\n"
         message += ", ".join(available_months)
         return [message]
     
