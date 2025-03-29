@@ -7,6 +7,8 @@ import datetime
 import os
 from dotenv import load_dotenv
 import json
+import asyncio
+import time
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +26,27 @@ ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID'))
 # File to store previous tour dates
 TOUR_DATES_FILE = 'previous_tour_dates.json'
 
+# Rate limit handling
+MAX_RETRIES = 5
+INITIAL_RETRY_DELAY = 1  # seconds
+
+async def retry_with_backoff(func, *args, **kwargs):
+    retry_delay = INITIAL_RETRY_DELAY
+    for attempt in range(MAX_RETRIES):
+        try:
+            return await func(*args, **kwargs)
+        except discord.HTTPException as e:
+            if e.code == 429:  # Rate limit error
+                if attempt < MAX_RETRIES - 1:
+                    print(f"Rate limited. Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    raise
+            else:
+                raise
+    return None
+
 def load_previous_tour_dates():
     try:
         with open(TOUR_DATES_FILE, 'r') as f:
@@ -39,9 +62,9 @@ def save_tour_dates(tour_dates):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     
-    # Sync slash commands
+    # Sync slash commands with retry
     try:
-        synced = await bot.tree.sync()
+        synced = await retry_with_backoff(bot.tree.sync)
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
@@ -76,36 +99,43 @@ async def check_tour_dates():
     
     # If there are new tour dates, announce them
     if new_tour_dates:
-        announcement = "🎸 **Goose the Organization just announced new tour dates!** 🎸"
-        await announcements_channel.send(announcement)
-        
-        for date in new_tour_dates:
-            embed = discord.Embed(
-                title="New Tour Date!",
-                description=f"📍 {date['venue']}\n🏙️ {date['location']}",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Date", value=date['date'], inline=False)
-            await announcements_channel.send(embed=embed)
+        try:
+            announcement = "🎸 **Goose the Organization just announced new tour dates!** 🎸"
+            await retry_with_backoff(announcements_channel.send, announcement)
+            
+            for date in new_tour_dates:
+                embed = discord.Embed(
+                    title="New Tour Date!",
+                    description=f"📍 {date['venue']}\n🏙️ {date['location']}",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Date", value=date['date'], inline=False)
+                await retry_with_backoff(announcements_channel.send, embed=embed)
+                await asyncio.sleep(1)  # Add delay between messages
+        except Exception as e:
+            print(f"Error sending announcements: {e}")
     
     # Save current tour dates for next comparison
     save_tour_dates(current_tour_dates)
     
     # Post all tour dates to the regular channel
-    embed = discord.Embed(
-        title="Goose Tour Dates",
-        description="Latest tour dates from goosetheband.com",
-        color=discord.Color.blue()
-    )
-    
-    for date in current_tour_dates:
-        embed.add_field(
-            name=date['date'],
-            value=f"📍 {date['venue']}\n🏙️ {date['location']}",
-            inline=False
+    try:
+        embed = discord.Embed(
+            title="Goose Tour Dates",
+            description="Latest tour dates from goosetheband.com",
+            color=discord.Color.blue()
         )
-    
-    await channel.send(embed=embed)
+        
+        for date in current_tour_dates:
+            embed.add_field(
+                name=date['date'],
+                value=f"📍 {date['venue']}\n🏙️ {date['location']}",
+                inline=False
+            )
+        
+        await retry_with_backoff(channel.send, embed=embed)
+    except Exception as e:
+        print(f"Error posting tour dates: {e}")
 
 @bot.tree.command(name="tour_dates", description="Get the latest Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
@@ -117,20 +147,24 @@ async def tour_dates(interaction: discord.Interaction):
         await interaction.followup.send("Sorry, I couldn't fetch the tour dates at this time.")
         return
     
-    embed = discord.Embed(
-        title="Goose Tour Dates",
-        description="Latest tour dates from goosetheband.com",
-        color=discord.Color.blue()
-    )
-    
-    for date in tour_dates:
-        embed.add_field(
-            name=date['date'],
-            value=f"📍 {date['venue']}\n🏙️ {date['location']}",
-            inline=False
+    try:
+        embed = discord.Embed(
+            title="Goose Tour Dates",
+            description="Latest tour dates from goosetheband.com",
+            color=discord.Color.blue()
         )
-    
-    await interaction.followup.send(embed=embed)
+        
+        for date in tour_dates:
+            embed.add_field(
+                name=date['date'],
+                value=f"📍 {date['venue']}\n🏙️ {date['location']}",
+                inline=False
+            )
+        
+        await retry_with_backoff(interaction.followup.send, embed=embed)
+    except Exception as e:
+        print(f"Error sending tour dates: {e}")
+        await interaction.followup.send("Sorry, there was an error sending the tour dates.")
 
 def get_tour_dates():
     url = "https://www.goosetheband.com/tour"
@@ -169,4 +203,14 @@ if __name__ == "__main__":
     if not ANNOUNCEMENTS_CHANNEL_ID:
         raise ValueError("ANNOUNCEMENTS_CHANNEL_ID environment variable is not set")
     
-    bot.run(DISCORD_TOKEN)
+    # Add retry logic for bot startup
+    for attempt in range(MAX_RETRIES):
+        try:
+            bot.run(DISCORD_TOKEN)
+            break
+        except discord.HTTPException as e:
+            if e.code == 429 and attempt < MAX_RETRIES - 1:
+                print(f"Rate limited on startup. Retrying in {INITIAL_RETRY_DELAY * (2 ** attempt)} seconds...")
+                time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+            else:
+                raise
