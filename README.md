@@ -1,16 +1,24 @@
 # Goose Tour Dates Discord Bot
 
-A Discord bot that scrapes and displays upcoming tour dates for the band Goose using slash commands.
+A Discord bot that scrapes and displays upcoming tour dates for the band Goose. The bot provides tour information in a clean, organized format with proper message length handling and error recovery.
 
 ## Features
 
-- `/tourdates` slash command to fetch and display upcoming tour dates
-- Role-based permission system for command access
-- Automatic formatting of dates and event information
-- Handles multi-day events and festivals
-- Ephemeral responses (only visible to command user)
-- Automatic message splitting for long responses
-- Retry mechanism for failed scraping attempts
+- Scrapes tour dates from Goose's official website
+- Groups dates by month for better readability
+- Handles Discord message length limits automatically
+- Includes venue information, ticket links, and additional details
+- Role-based access control
+- Automatic reconnection handling
+- Comprehensive error logging
+
+## Project Structure
+
+The project is split into three main Python files:
+
+- `scraper.py`: Handles web scraping functionality using Selenium
+- `data_processor.py`: Processes and formats the scraped data
+- `discord_bot.py`: Manages Discord bot functionality and message handling
 
 ## Prerequisites
 
@@ -18,7 +26,28 @@ A Discord bot that scrapes and displays upcoming tour dates for the band Goose u
 - Chrome browser
 - ChromeDriver
 - Discord Bot Token
-- Required Discord roles
+- Required Python packages (listed in requirements.txt)
+
+## Environment Variables
+
+Create a `.env` file with the following variables:
+
+```env
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_bot_token_here
+ALLOWED_ROLE_IDS=role_id_1,role_id_2
+
+# Chrome Configuration
+CHROME_BIN=/usr/bin/google-chrome
+CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
+
+# Python Configuration
+PYTHONUNBUFFERED=1
+PYTHONIOENCODING=utf-8
+
+# Data Directory
+RAILWAY_DATA_DIR=/data
+```
 
 ## Installation
 
@@ -27,83 +56,70 @@ A Discord bot that scrapes and displays upcoming tour dates for the band Goose u
    ```bash
    pip install -r requirements.txt
    ```
-
-3. Set up environment variables in `.env`:
-   ```
-   DISCORD_TOKEN=your_discord_bot_token_here
-   ALLOWED_ROLE_IDS=role_id_1,role_id_2
-   ```
-
-4. Set up Chrome and ChromeDriver:
+3. Set up Chrome and ChromeDriver:
    - Install Chrome browser
    - Download and install ChromeDriver matching your Chrome version
-   - Set environment variables for Chrome paths:
-     ```
-     CHROME_BIN=/path/to/chrome
-     CHROMEDRIVER_PATH=/path/to/chromedriver
-     ```
+   - Update the Chrome paths in your `.env` file if different from defaults
+
+## Local Development
+
+Run the bot locally:
+```bash
+python discord_bot.py
+```
 
 ## Docker Deployment
 
+The project includes a Dockerfile for containerized deployment:
+
 1. Build the Docker image:
    ```bash
-   docker build -t goose-tour-dates-bot .
+   docker build -t goose-tour-bot .
    ```
 
 2. Run the container:
    ```bash
-   docker run -d \
-     --env-file .env \
-     --name goose-tour-dates-bot \
-     goose-tour-dates-bot
+   docker run -d --env-file .env goose-tour-bot
    ```
 
-## Configuration
+## Railway Deployment
 
-### Environment Variables
+The project is configured for deployment on Railway:
 
-- `DISCORD_TOKEN`: Your Discord bot token
-- `ALLOWED_ROLE_IDS`: Comma-separated list of Discord role IDs that can use the command
-- `CHROME_BIN`: Path to Chrome browser (default: /usr/bin/google-chrome)
-- `CHROMEDRIVER_PATH`: Path to ChromeDriver (default: /usr/local/bin/chromedriver)
-
-### Discord Setup
-
-1. Create a Discord application at [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a bot and get the token
-3. Enable required intents:
-   - Message Content Intent
-4. Invite the bot to your server with required permissions:
-   - Send Messages
-   - Read Messages/View Channels
-   - Use Slash Commands
+1. Connect your GitHub repository to Railway
+2. Set up the environment variables in Railway's dashboard
+3. Deploy using the provided Dockerfile
 
 ## Usage
 
-1. Start the bot
-2. Use the `/tourdates` command in any channel where the bot has access
-3. Only users with the specified roles can use the command
-4. The bot will respond with formatted tour dates
+The bot provides a slash command `/tourdates` that:
+- Requires specific Discord roles to use
+- Returns tour dates grouped by month
+- Handles long messages by splitting them appropriately
+- Provides venue information and ticket links
+- Includes additional details when available
 
 ## Error Handling
 
-- The bot includes retry mechanisms for failed scraping attempts
-- Failed commands show ephemeral error messages
-- Detailed logging is available in `goose_tour_dates.log`
+The bot includes comprehensive error handling for:
+- Connection issues
+- Message length limits
+- Web scraping failures
+- Role permission issues
+- Chrome/ChromeDriver problems
 
-## Security
+## Logging
 
-- Role-based access control for commands
-- Ephemeral responses to prevent channel spam
-- Environment variable configuration for sensitive data
-- Secure handling of Discord tokens
+Logs are written to `goose_tour_dates.log` with timestamps and log levels for debugging.
 
-## Maintenance
+## Contributing
 
-- Regular updates to Chrome and ChromeDriver may be required
-- Monitor the log file for any issues
-- Update role IDs in the environment variables as needed
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
-## Support
+## License
 
-For issues or questions, please contact the server administrators or create an issue in the repository. 
+This project is licensed under the MIT License - see the LICENSE file for details.

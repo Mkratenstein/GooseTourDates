@@ -1,1 +1,1 @@
-worker: python ConcertBot.py 
+web: python -u discord_bot.py 
