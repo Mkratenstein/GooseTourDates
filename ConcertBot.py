@@ -263,11 +263,26 @@ def main():
                 # Print tour dates in a readable format
                 logger.info(f"\nFound {len(tour_dates)} tour dates:")
                 logger.info("=" * 50)
+                
+                # Group events by month for better readability
+                current_month = None
                 for date in tour_dates:
+                    # Get the month from the date
+                    date_obj = datetime.strptime(date['date'].split(" to ")[0], "%Y-%m-%d")
+                    month = date_obj.strftime("%B %Y")
+                    
+                    # Print month header if it's a new month
+                    if month != current_month:
+                        current_month = month
+                        logger.info(f"\n{month}")
+                        logger.info("-" * len(month))
+                    
+                    # Print event details
                     logger.info(f"Date: {format_date_for_display(date['date'])}")
                     logger.info(f"Venue: {date['venue']}")
                     logger.info(f"Location: {date['location']}")
-                    logger.info(f"Ticket Links: {date['ticketLinks']}")
+                    if date['ticketLinks']:
+                        logger.info(f"Ticket Links: {date['ticketLinks']}")
                     if date['additionalInfo']:
                         logger.info(f"Additional Info: {date['additionalInfo']}")
                     logger.info("-" * 30)
