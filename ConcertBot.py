@@ -63,8 +63,8 @@ def setup_driver():
         # Use the system Chrome binary
         chrome_options.binary_location = '/usr/bin/google-chrome'
         
-        # Use webdriver-manager to handle ChromeDriver installation
-        service = Service(ChromeDriverManager().install())
+        # Use specific ChromeDriver path
+        service = Service('/usr/local/bin/chromedriver')
         
         # Create driver with service and options
         driver = webdriver.Chrome(service=service, options=chrome_options)
