@@ -68,9 +68,22 @@ def get_tour_dates():
             }
             
             try:
+                logger.info(f"Fetching Seated API from: {seated_url}")
                 seated_response = requests.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
-                seated_data = seated_response.json()
+                
+                # Log response details for debugging
+                logger.info(f"Seated API response status: {seated_response.status_code}")
+                logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
+                logger.info(f"Seated API response content: {seated_response.text[:1000]}")  # Log first 1000 chars
+                
+                # Try to parse the response as JSON
+                try:
+                    seated_data = seated_response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse Seated API response as JSON: {e}")
+                    logger.error(f"Raw response content: {seated_response.text}")
+                    seated_data = None
                 
                 if seated_data and 'events' in seated_data:
                     tour_dates = []
@@ -87,6 +100,7 @@ def get_tour_dates():
                             location_text = f"{city}, {state}" if city and state else "Location TBA"
                             
                             if date_text and venue_text and location_text:
+                                logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
                                 tour_dates.append({
                                     'date': date_text,
                                     'venue': venue_text,
@@ -98,8 +112,16 @@ def get_tour_dates():
                     
                     if tour_dates:
                         return tour_dates
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error fetching Seated data: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    logger.error(f"Seated response status: {e.response.status_code}")
+                    logger.error(f"Seated response headers: {e.response.headers}")
+                    logger.error(f"Seated response content: {e.response.text}")
             except Exception as e:
-                logger.error(f"Error with Seated API: {e}")
+                logger.error(f"Unexpected error with Seated API: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
         
         # If Seated API fails, try parsing the HTML directly
         logger.info("Attempting to parse HTML directly...")
@@ -118,6 +140,12 @@ def get_tour_dates():
             # Look for any divs that might contain tour dates
             potential_containers = main_content.find_all(['div', 'section'], recursive=True)
             logger.info(f"Found {len(potential_containers)} potential containers")
+            
+            # Log all div classes for debugging
+            all_divs = main_content.find_all('div', class_=True)
+            logger.info("All div classes found in main content:")
+            for div in all_divs:
+                logger.info(f"Div class: {div.get('class')}")
             
             for container in potential_containers:
                 try:
