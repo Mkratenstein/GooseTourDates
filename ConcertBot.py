@@ -87,12 +87,28 @@ def scrape_goose_tour_dates():
         logger.info("Navigating to Goose tour page...")
         driver.get("https://www.goosetheband.com/tour")
         
-        # Wait for the tour data to load
-        logger.info("Waiting for tour dates to load...")
+        # Wait for the page to load completely
+        logger.info("Waiting for page to load...")
         wait = WebDriverWait(driver, 30)
-        tour_container = wait.until(
-            EC.presence_of_element_located((By.CLASS_NAME, "tour-dates-container"))
-        )
+        
+        # First wait for the body to be present
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        
+        # Then wait for the tour container with a longer timeout
+        logger.info("Waiting for tour dates to load...")
+        try:
+            tour_container = wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, "tour-dates-container"))
+            )
+        except Exception as e:
+            logger.error(f"Timeout waiting for tour container: {e}")
+            # Try to get the page source for debugging
+            logger.info("Page source:")
+            logger.info(driver.page_source)
+            return None
+        
+        # Add a small delay to ensure dynamic content is loaded
+        time.sleep(5)
         
         # Extract tour data
         logger.info("Extracting tour dates...")
@@ -100,6 +116,7 @@ def scrape_goose_tour_dates():
         
         # Find all event containers
         event_elements = driver.find_elements(By.CSS_SELECTOR, ".tour-dates-container .touring-event")
+        logger.info(f"Found {len(event_elements)} event elements")
         
         for event in event_elements:
             try:
@@ -139,6 +156,12 @@ def scrape_goose_tour_dates():
                 logger.warning(f"Error processing event: {e}")
                 continue
         
+        if not tour_dates:
+            logger.warning("No tour dates found in the page")
+            # Log the page source for debugging
+            logger.info("Page source:")
+            logger.info(driver.page_source)
+        
         # Process dates to ensure consistent format
         processed_dates = []
         for event in tour_dates:
@@ -168,6 +191,10 @@ def scrape_goose_tour_dates():
         
     except Exception as e:
         logger.error(f"Error scraping tour dates: {e}")
+        # Log the page source for debugging
+        if driver:
+            logger.info("Page source:")
+            logger.info(driver.page_source)
         return None
     finally:
         if driver:
