@@ -56,15 +56,22 @@ def get_tour_dates():
             artist_id = seated_widget.get('data-artist-id')
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
-            # Try to fetch from Seated widget's JavaScript API
-            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events.json"
+            # First, try to get the widget's JavaScript
+            widget_js_url = "https://widget.seated.com/app.js"
+            logger.info(f"Fetching widget JavaScript from: {widget_js_url}")
+            js_response = session.get(widget_js_url, headers=headers)
+            js_response.raise_for_status()
+            
+            # Now try to fetch from Seated widget's GraphQL API
+            seated_url = "https://widget.seated.com/graphql"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
+                'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Origin': 'https://www.goosetheband.com',
                 'Referer': 'https://www.goosetheband.com/tour',
                 'Connection': 'keep-alive',
+                'Content-Type': 'application/json',
                 'Sec-Fetch-Dest': 'empty',
                 'Sec-Fetch-Mode': 'cors',
                 'Sec-Fetch-Site': 'cross-site',
@@ -73,13 +80,43 @@ def get_tour_dates():
                 'X-Requested-With': 'XMLHttpRequest',
                 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
                 'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'Cookie': 'seated_session=development; _ga=GA1.1.1234567890.1234567890; _ga_1234567890=GS1.1.1234567890.1.1.1234567890.0.0.0'
+                'sec-ch-ua-platform': '"Windows"'
+            }
+            
+            # GraphQL query for events
+            graphql_query = {
+                "operationName": "GetArtistEvents",
+                "variables": {
+                    "artistId": artist_id,
+                    "first": 100,
+                    "after": None
+                },
+                "query": """
+                query GetArtistEvents($artistId: ID!, $first: Int!, $after: String) {
+                    artist(id: $artistId) {
+                        events(first: $first, after: $after) {
+                            edges {
+                                node {
+                                    id
+                                    name
+                                    date
+                                    startTime
+                                    venue {
+                                        name
+                                        city
+                                        state
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                """
             }
             
             try:
                 logger.info(f"Fetching Seated widget API from: {seated_url}")
-                seated_response = session.get(seated_url, headers=seated_headers)
+                seated_response = session.post(seated_url, headers=seated_headers, json=graphql_query)
                 seated_response.raise_for_status()
                 
                 # Log response details for debugging
@@ -89,60 +126,40 @@ def get_tour_dates():
                 # Try to parse the response as JSON
                 try:
                     seated_data = seated_response.json()
+                    logger.info(f"Seated API response data: {seated_data}")
+                    
+                    if seated_data.get('data', {}).get('artist', {}).get('events', {}).get('edges'):
+                        tour_dates = []
+                        for edge in seated_data['data']['artist']['events']['edges']:
+                            event = edge['node']
+                            try:
+                                date_text = event.get('date', '')
+                                if not date_text and event.get('startTime'):
+                                    date = datetime.fromtimestamp(int(event['startTime']))
+                                    date_text = date.strftime('%B %d, %Y')
+                                
+                                venue_text = event.get('venue', {}).get('name', 'Venue TBA')
+                                city = event.get('venue', {}).get('city', '')
+                                state = event.get('venue', {}).get('state', '')
+                                location_text = f"{city}, {state}" if city and state else "Location TBA"
+                                
+                                if date_text and venue_text and location_text:
+                                    logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
+                                    tour_dates.append({
+                                        'date': date_text,
+                                        'venue': venue_text,
+                                        'location': location_text
+                                    })
+                            except Exception as e:
+                                logger.error(f"Error processing Seated event: {e}")
+                                continue
+                        
+                        if tour_dates:
+                            return tour_dates
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse Seated API response as JSON: {e}")
                     logger.error(f"Raw response content: {seated_response.text}")
                     
-                    # If we got HTML, try to extract the correct artist ID
-                    if '<!doctype html>' in seated_response.text:
-                        seated_soup = BeautifulSoup(seated_response.text, 'html.parser')
-                        seated_div = seated_soup.find('div', {'data-artist-id': True})
-                        if seated_div:
-                            new_artist_id = seated_div.get('data-artist-id')
-                            logger.info(f"Found new artist ID in response: {new_artist_id}")
-                            
-                            # Try again with the new artist ID
-                            seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events.json"
-                            logger.info(f"Fetching Seated API with new artist ID: {seated_url}")
-                            seated_response = session.get(seated_url, headers=seated_headers)
-                            seated_response.raise_for_status()
-                            
-                            try:
-                                seated_data = seated_response.json()
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Failed to parse Seated API response as JSON: {e}")
-                                logger.error(f"Raw response content: {seated_response.text}")
-                                seated_data = None
-                    else:
-                        seated_data = None
-                
-                if seated_data and 'events' in seated_data:
-                    tour_dates = []
-                    for event in seated_data['events']:
-                        try:
-                            date_text = event.get('date', '')
-                            if not date_text and 'start_time' in event:
-                                date = datetime.fromtimestamp(event['start_time'])
-                                date_text = date.strftime('%B %d, %Y')
-                            
-                            venue_text = event.get('venue', {}).get('name', 'Venue TBA')
-                            city = event.get('venue', {}).get('city', '')
-                            state = event.get('venue', {}).get('state', '')
-                            location_text = f"{city}, {state}" if city and state else "Location TBA"
-                            
-                            if date_text and venue_text and location_text:
-                                logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
-                                tour_dates.append({
-                                    'date': date_text,
-                                    'venue': venue_text,
-                                    'location': location_text
-                                })
-                        except Exception as e:
-                            logger.error(f"Error processing Seated event: {e}")
-                            continue
-                    
-                    if tour_dates:
-                        return tour_dates
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching Seated data: {e}")
                 if hasattr(e, 'response') and e.response is not None:
