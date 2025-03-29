@@ -98,7 +98,7 @@ def scrape_goose_tour_dates():
         logger.info("Waiting for tour dates to load...")
         try:
             tour_container = wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, "tour-dates-container"))
+                EC.presence_of_element_located((By.CLASS_NAME, "seated-event-row"))
             )
         except Exception as e:
             logger.error(f"Timeout waiting for tour container: {e}")
@@ -115,7 +115,7 @@ def scrape_goose_tour_dates():
         tour_dates = []
         
         # Find all event containers
-        event_elements = driver.find_elements(By.CSS_SELECTOR, ".tour-dates-container .touring-event")
+        event_elements = driver.find_elements(By.CSS_SELECTOR, ".seated-event-row")
         logger.info(f"Found {len(event_elements)} event elements")
         
         for event in event_elements:
@@ -125,31 +125,35 @@ def scrape_goose_tour_dates():
                     continue
                 
                 # Extract date info
-                date_element = event.find_element(By.CSS_SELECTOR, ".date-text")
+                date_element = event.find_element(By.CSS_SELECTOR, ".seated-event-date-cell")
                 date_str = date_element.text.strip() if date_element else ""
                 
                 # Extract venue info
-                venue_element = event.find_element(By.CSS_SELECTOR, ".event-venue")
+                venue_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-name")
                 venue = venue_element.text.strip() if venue_element else ""
                 
                 # Extract location info
-                location_element = event.find_element(By.CSS_SELECTOR, ".event-location")
+                location_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-location")
                 location = location_element.text.strip() if location_element else ""
                 
-                # Extract ticket link
-                ticket_element = event.find_element(By.CSS_SELECTOR, "a.tickets-button")
-                ticket_link = ticket_element.get_attribute("href") if ticket_element else ""
+                # Extract ticket links
+                ticket_links = []
+                ticket_elements = event.find_elements(By.CSS_SELECTOR, ".seated-event-link")
+                for ticket_element in ticket_elements:
+                    ticket_link = ticket_element.get_attribute("href")
+                    ticket_text = ticket_element.text.strip()
+                    if ticket_link and ticket_text:
+                        ticket_links.append(f"{ticket_text}: {ticket_link}")
                 
-                # Extract additional info
-                info_element = event.find_element(By.CSS_SELECTOR, ".event-info")
-                additional_info = info_element.text.strip() if info_element else ""
+                # Join ticket links with semicolons
+                ticket_links_str = "; ".join(ticket_links)
                 
                 tour_dates.append({
                     "date": date_str,
                     "venue": venue,
                     "location": location,
-                    "ticketLink": ticket_link,
-                    "additionalInfo": additional_info
+                    "ticketLinks": ticket_links_str,
+                    "additionalInfo": ""  # No additional info in new structure
                 })
                 
             except Exception as e:
@@ -215,22 +219,20 @@ def main():
             if not tour_dates:
                 logger.warning("No tour dates found. The page structure may have changed.")
             else:
-                # Create a DataFrame
-                df = pd.DataFrame(tour_dates)
-                
-                # Generate timestamp for the filename
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                # Use Railway's data directory if available, otherwise use current directory
-                data_dir = os.getenv("RAILWAY_DATA_DIR", ".")
-                csv_filename = os.path.join(data_dir, f"goose_tour_dates_{timestamp}.csv")
-                
-                # Export to CSV
-                df.to_csv(csv_filename, index=False)
-                logger.info(f"Exported {len(tour_dates)} tour dates to {csv_filename}")
+                # Print tour dates in a readable format
+                logger.info(f"\nFound {len(tour_dates)} tour dates:")
+                logger.info("=" * 50)
+                for date in tour_dates:
+                    logger.info(f"\nDate: {date['date']}")
+                    logger.info(f"Venue: {date['venue']}")
+                    logger.info(f"Location: {date['location']}")
+                    logger.info(f"Ticket Links: {date['ticketLinks']}")
+                    if date['additionalInfo']:
+                        logger.info(f"Additional Info: {date['additionalInfo']}")
+                    logger.info("-" * 30)
             
             # Wait for 24 hours before next check
-            logger.info("Waiting 24 hours before next check...")
+            logger.info("\nWaiting 24 hours before next check...")
             time.sleep(24 * 60 * 60)  # 24 hours in seconds
             
         except KeyboardInterrupt:
