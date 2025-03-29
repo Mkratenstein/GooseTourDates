@@ -153,23 +153,37 @@ def scrape_goose_tour_dates():
         event_elements = driver.find_elements(By.CSS_SELECTOR, ".seated-event-row")
         logger.info(f"Found {len(event_elements)} event elements")
         
+        # Track processed dates to prevent duplicates
+        processed_dates = set()
+        
         for event in event_elements:
             try:
                 # Skip past events
                 if "past-event" in event.get_attribute("class"):
                     continue
                 
-                # Extract date info
+                # Extract all information first before processing
                 date_element = event.find_element(By.CSS_SELECTOR, ".seated-event-date-cell")
-                date_str = date_element.text.strip() if date_element else ""
-                
-                # Extract venue info
                 venue_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-name")
-                venue = venue_element.text.strip() if venue_element else ""
-                
-                # Extract location info
                 location_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-location")
+                
+                # Get the text values
+                date_str = date_element.text.strip() if date_element else ""
+                venue = venue_element.text.strip() if venue_element else ""
                 location = location_element.text.strip() if location_element else ""
+                
+                # Skip if we're missing essential information
+                if not all([date_str, venue, location]):
+                    continue
+                
+                # Create a unique identifier for the event
+                event_id = f"{date_str}_{venue}_{location}"
+                
+                # Skip if we've already processed this event
+                if event_id in processed_dates:
+                    continue
+                
+                processed_dates.add(event_id)
                 
                 # Extract details info if present
                 try:
