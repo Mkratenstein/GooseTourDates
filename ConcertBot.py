@@ -4,6 +4,8 @@ from datetime import datetime
 import os
 import time
 import logging
+import subprocess
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -12,19 +14,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def install_playwright_deps():
+    """Install Playwright dependencies if not already installed."""
+    try:
+        logger.info("Installing Playwright dependencies...")
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+        logger.info("Playwright dependencies installed successfully")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install Playwright dependencies: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        logger.error("Playwright command not found. Installing Playwright...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "playwright"], check=True)
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+            logger.info("Playwright and dependencies installed successfully")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install Playwright: {e}")
+            sys.exit(1)
+
 def scrape_goose_tour_dates():
     with sync_playwright() as p:
-        # Launch browser
-        browser = p.chromium.launch(headless=True)
+        # Launch browser with additional args for container environment
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
+        )
         page = browser.new_page()
         
         try:
             # Navigate to tour page
             logger.info("Navigating to Goose tour page...")
-            page.goto("https://www.goosetheband.com/tour")
+            page.goto("https://www.goosetheband.com/tour", wait_until='networkidle')
             
             # Wait for the tour data to load
-            page.wait_for_selector('.tour-dates-container')
+            page.wait_for_selector('.tour-dates-container', timeout=30000)
             
             # Extract tour data using JavaScript in the page context
             logger.info("Extracting tour dates...")
@@ -100,11 +129,17 @@ def scrape_goose_tour_dates():
             logger.error(f"Error scraping tour dates: {e}")
             return None
         finally:
-            browser.close()
+            try:
+                browser.close()
+            except Exception as e:
+                logger.error(f"Error closing browser: {e}")
 
 def main():
     logger.info("Starting Goose Tour Date Scraper")
     logger.info("=" * 50)
+    
+    # Install Playwright dependencies
+    install_playwright_deps()
     
     while True:
         try:
