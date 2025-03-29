@@ -266,37 +266,49 @@ def main():
                 
                 # Group events by month for better readability
                 current_month = None
+                events_by_month = {}
+                
+                # First, group events by month
                 for date in tour_dates:
                     try:
                         # Get the month from the date
                         date_obj = datetime.strptime(date['date'].split(" to ")[0], "%Y-%m-%d")
                         month = date_obj.strftime("%B %Y")
                         
-                        # Print month header if it's a new month
-                        if month != current_month:
-                            current_month = month
-                            logger.info(f"\n{month}")
-                            logger.info("-" * len(month))
-                        
-                        # Print event details in a consistent order
-                        logger.info(f"Date: {format_date_for_display(date['date'])}")
-                        logger.info(f"Venue: {date['venue']}")
-                        logger.info(f"Location: {date['location']}")
-                        
-                        # Only print ticket links if they exist
-                        if date['ticketLinks']:
-                            logger.info(f"Ticket Links: {date['ticketLinks']}")
-                        
-                        # Only print additional info if it exists
-                        if date['additionalInfo']:
-                            logger.info(f"Additional Info: {date['additionalInfo']}")
-                        
-                        # Add separator between events
-                        logger.info("-" * 30)
+                        if month not in events_by_month:
+                            events_by_month[month] = []
+                        events_by_month[month].append(date)
                         
                     except Exception as e:
-                        logger.error(f"Error formatting event: {e}")
+                        logger.error(f"Error processing date: {e}")
                         continue
+                
+                # Then print events grouped by month
+                for month in sorted(events_by_month.keys()):
+                    logger.info(f"\n{month}")
+                    logger.info("-" * len(month))
+                    
+                    for date in events_by_month[month]:
+                        try:
+                            # Print event details in a consistent order
+                            logger.info(f"Date: {format_date_for_display(date['date'])}")
+                            logger.info(f"Venue: {date['venue']}")
+                            logger.info(f"Location: {date['location']}")
+                            
+                            # Only print ticket links if they exist
+                            if date['ticketLinks']:
+                                logger.info(f"Ticket Links: {date['ticketLinks']}")
+                            
+                            # Only print additional info if it exists
+                            if date['additionalInfo']:
+                                logger.info(f"Additional Info: {date['additionalInfo']}")
+                            
+                            # Add separator between events
+                            logger.info("-" * 30)
+                            
+                        except Exception as e:
+                            logger.error(f"Error formatting event: {e}")
+                            continue
             
             # Wait for 24 hours before next check
             logger.info("\nWaiting 24 hours before next check...")
