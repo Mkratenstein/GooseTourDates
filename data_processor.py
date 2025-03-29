@@ -91,9 +91,11 @@ def format_event_output(event):
     if event['ticketLinks']:
         # Format ticket links more compactly
         ticket_lines = []
-        current_line = "**Tickets:** "
+        current_line = "🎫 "
         for link in event['ticketLinks'].split("; "):
             if link.strip():  # Only process non-empty links
+                # Remove any "tickets:" prefix from the link text
+                link = link.replace("tickets:", "").strip()
                 if len(current_line + link) > 80:  # Reasonable line length
                     ticket_lines.append(current_line)
                     current_line = "  " + link
