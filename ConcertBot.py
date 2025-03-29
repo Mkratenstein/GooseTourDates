@@ -14,9 +14,15 @@ import subprocess
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True  # Force reconfiguration of the root logger
 )
 logger = logging.getLogger(__name__)
+
+# Add a file handler to ensure synchronized output
+file_handler = logging.FileHandler('goose_tour_dates.log')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 def get_chrome_version():
     """Get the installed Chrome version."""
@@ -259,6 +265,22 @@ def format_date_for_display(date_str):
         logger.warning(f"Could not format date '{date_str}': {e}")
         return date_str
 
+def format_event_output(event):
+    """Format a single event's output as a single string."""
+    output_lines = []
+    output_lines.append(f"Date: {format_date_for_display(event['date'])}")
+    output_lines.append(f"Venue: {event['venue']}")
+    output_lines.append(f"Location: {event['location']}")
+    
+    if event['ticketLinks']:
+        output_lines.append(f"Ticket Links: {event['ticketLinks']}")
+    
+    if event['additionalInfo']:
+        output_lines.append(f"Additional Info: {event['additionalInfo']}")
+    
+    output_lines.append("-" * 30)
+    return "\n".join(output_lines)
+
 def main():
     logger.info("Starting Goose Tour Date Scraper")
     logger.info("=" * 50)
@@ -298,31 +320,22 @@ def main():
                 
                 # Then print events grouped by month
                 for month in sorted(events_by_month.keys()):
-                    logger.info(f"\n{month}")
-                    logger.info("-" * len(month))
+                    # Format month header
+                    month_output = [
+                        f"\n{month}",
+                        "-" * len(month)
+                    ]
+                    logger.info("\n".join(month_output))
                     
                     # Sort events within each month by date
                     month_events = sorted(events_by_month[month], 
                                        key=lambda x: x['date'].split(" to ")[0])
                     
+                    # Format all events in this month
                     for date in month_events:
                         try:
-                            # Print event details in a consistent order
-                            logger.info(f"Date: {format_date_for_display(date['date'])}")
-                            logger.info(f"Venue: {date['venue']}")
-                            logger.info(f"Location: {date['location']}")
-                            
-                            # Only print ticket links if they exist
-                            if date['ticketLinks']:
-                                logger.info(f"Ticket Links: {date['ticketLinks']}")
-                            
-                            # Only print additional info if it exists
-                            if date['additionalInfo']:
-                                logger.info(f"Additional Info: {date['additionalInfo']}")
-                            
-                            # Add separator between events
-                            logger.info("-" * 30)
-                            
+                            # Format and log each event as a single message
+                            logger.info(format_event_output(date))
                         except Exception as e:
                             logger.error(f"Error formatting event: {e}")
                             continue
