@@ -40,11 +40,15 @@ WEBSOCKET_TIMEOUT = 30
 CONNECTION_TIMEOUT = ClientTimeout(total=30, connect=10)
 MESSAGE_RETRY_DELAY = 2  # Delay between message retries
 MESSAGE_SEND_DELAY = 1  # Delay between sending messages to avoid rate limits
+HEARTBEAT_TIMEOUT = 15  # Maximum time to wait for heartbeat response
+HEARTBEAT_INTERVAL = 5  # Time between heartbeat checks
 
 # Add connection state tracking
 connection_attempts = 0
 last_connection_time = 0
 is_reconnecting = False
+last_heartbeat = 0
+heartbeat_task = None
 
 async def create_session():
     """Create a new aiohttp session with proper timeout settings."""
@@ -142,35 +146,34 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         except:
             logger.error("Failed to send error message to user")
 
-@bot.event
-async def on_ready():
-    """Called when the bot is ready and connected to Discord."""
-    global connection_attempts, last_connection_time
-    connection_attempts = 0
-    last_connection_time = time.time()
-    
-    logger.info(f'Bot is ready! Logged in as {bot.user.name}')
-    
-    # Configure HTTP session timeout
-    try:
-        bot.http.connector._timeout = WEBSOCKET_TIMEOUT
-        logger.info(f"Set HTTP session timeout to {WEBSOCKET_TIMEOUT} seconds")
-    except Exception as e:
-        logger.warning(f"Could not set HTTP session timeout: {e}")
-    
-    # Sync commands with Discord
-    try:
-        synced = await bot.tree.sync()
-        logger.info(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        logger.error(f"Failed to sync commands: {e}")
+async def check_heartbeat():
+    """Monitor heartbeat and handle disconnections."""
+    global last_heartbeat, heartbeat_task
+    while True:
+        try:
+            current_time = time.time()
+            if current_time - last_heartbeat > HEARTBEAT_TIMEOUT:
+                logger.warning("Heartbeat timeout detected, initiating reconnection...")
+                if not is_reconnecting:
+                    await handle_disconnect()
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+        except Exception as e:
+            logger.error(f"Error in heartbeat check: {e}")
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
 
-@bot.event
-async def on_disconnect():
-    """Called when the bot disconnects from Discord."""
-    global connection_attempts, is_reconnecting
+async def handle_disconnect():
+    """Handle bot disconnection and reconnection."""
+    global connection_attempts, is_reconnecting, heartbeat_task
     is_reconnecting = True
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
+    
+    # Cancel existing heartbeat task if it exists
+    if heartbeat_task and not heartbeat_task.done():
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
     
     for attempt in range(MAX_RECONNECT_ATTEMPTS):
         try:
@@ -203,6 +206,8 @@ async def on_disconnect():
                     await bot.start(token)
                     logger.info("Successfully reconnected to Discord")
                     is_reconnecting = False
+                    # Start new heartbeat task
+                    heartbeat_task = asyncio.create_task(check_heartbeat())
                     return
             except asyncio.TimeoutError:
                 logger.error("Connection attempt timed out")
@@ -261,6 +266,48 @@ async def restart_bot():
     except Exception as e:
         logger.error(f"Failed to restart bot: {e}")
         raise
+
+@bot.event
+async def on_ready():
+    """Called when the bot is ready and connected to Discord."""
+    global connection_attempts, last_connection_time, last_heartbeat, heartbeat_task
+    connection_attempts = 0
+    last_connection_time = time.time()
+    last_heartbeat = time.time()
+    
+    logger.info(f'Bot is ready! Logged in as {bot.user.name}')
+    
+    # Configure HTTP session timeout
+    try:
+        bot.http.connector._timeout = WEBSOCKET_TIMEOUT
+        logger.info(f"Set HTTP session timeout to {WEBSOCKET_TIMEOUT} seconds")
+    except Exception as e:
+        logger.warning(f"Could not set HTTP session timeout: {e}")
+    
+    # Sync commands with Discord
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+    
+    # Start heartbeat monitoring
+    if heartbeat_task and not heartbeat_task.done():
+        heartbeat_task.cancel()
+    heartbeat_task = asyncio.create_task(check_heartbeat())
+
+@bot.event
+async def on_disconnect():
+    """Called when the bot disconnects from Discord."""
+    global last_heartbeat
+    last_heartbeat = time.time()  # Reset heartbeat timestamp
+    await handle_disconnect()
+
+@bot.event
+async def on_heartbeat():
+    """Called when the bot receives a heartbeat from Discord."""
+    global last_heartbeat
+    last_heartbeat = time.time()
 
 @bot.event
 async def on_error(event, *args, **kwargs):
