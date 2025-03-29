@@ -10,6 +10,13 @@ import os
 import time
 import logging
 import subprocess
+import discord
+from discord import app_commands
+from discord.ext import commands
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +30,11 @@ logger = logging.getLogger(__name__)
 file_handler = logging.FileHandler('goose_tour_dates.log')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(file_handler)
+
+# Discord bot setup
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
 def get_chrome_version():
     """Get the installed Chrome version."""
@@ -268,94 +280,140 @@ def format_date_for_display(date_str):
 def format_event_output(event):
     """Format a single event's output as a single string."""
     output_lines = []
+    
+    # Always start with date
     output_lines.append(f"Date: {format_date_for_display(event['date'])}")
+    
+    # Add venue and location
     output_lines.append(f"Venue: {event['venue']}")
     output_lines.append(f"Location: {event['location']}")
     
+    # Add ticket links if present
     if event['ticketLinks']:
         output_lines.append(f"Ticket Links: {event['ticketLinks']}")
     
+    # Add additional info if present
     if event['additionalInfo']:
         output_lines.append(f"Additional Info: {event['additionalInfo']}")
     
-    output_lines.append("-" * 50)  # Increased separator length
+    # Add separator with consistent length
+    output_lines.append("-" * 50)
+    
+    # Join with double newlines for better spacing
+    return "\n\n".join(output_lines)
+
+def get_formatted_tour_dates():
+    """Get and format tour dates for Discord output."""
+    tour_dates = scrape_goose_tour_dates()
+    
+    if not tour_dates:
+        return "No tour dates found. The page structure may have changed."
+    
+    # Sort dates chronologically using the first date for date ranges
+    tour_dates.sort(key=lambda x: x['date'].split(" to ")[0])
+    
+    # Group events by month for better readability
+    events_by_month = {}
+    
+    # First, group events by month
+    for date in tour_dates:
+        try:
+            # Get the month from the date
+            date_obj = datetime.strptime(date['date'].split(" to ")[0], "%Y-%m-%d")
+            month = date_obj.strftime("%B %Y")
+            
+            if month not in events_by_month:
+                events_by_month[month] = []
+            events_by_month[month].append(date)
+            
+        except Exception as e:
+            logger.error(f"Error processing date: {e}")
+            continue
+    
+    # Build the output message
+    output_lines = []
+    output_lines.append(f"Found {len(tour_dates)} tour dates:")
+    output_lines.append("=" * 50)
+    
+    # Then format events grouped by month
+    for month in sorted(events_by_month.keys()):
+        # Format month header
+        month_output = [
+            f"\n{month}",
+            "-" * len(month)
+        ]
+        output_lines.extend(month_output)
+        
+        # Sort events within each month by date
+        month_events = sorted(events_by_month[month], 
+                           key=lambda x: x['date'].split(" to ")[0])
+        
+        # Format all events in this month
+        for date in month_events:
+            try:
+                output_lines.append(format_event_output(date))
+            except Exception as e:
+                logger.error(f"Error formatting event: {e}")
+                continue
+    
     return "\n".join(output_lines)
 
+@bot.event
+async def on_ready():
+    """Called when the bot is ready and connected to Discord."""
+    logger.info(f'Bot is ready! Logged in as {bot.user.name}')
+    
+    # Sync commands with Discord
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+@bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
+async def tour_dates(interaction: discord.Interaction):
+    """Slash command to get tour dates."""
+    await interaction.response.defer()  # Defer the response as scraping might take time
+    
+    try:
+        # Get the tour dates
+        tour_dates_message = get_formatted_tour_dates()
+        
+        # Split the message if it's too long (Discord has a 2000 character limit)
+        if len(tour_dates_message) > 1900:  # Leave some room for formatting
+            # Split by month separators
+            parts = tour_dates_message.split("\n" + "=" * 50)
+            current_message = parts[0]
+            
+            for part in parts[1:]:
+                if len(current_message + "\n" + "=" * 50 + part) > 1900:
+                    await interaction.followup.send(current_message)
+                    current_message = "=" * 50 + part
+                else:
+                    current_message += "\n" + "=" * 50 + part
+            
+            if current_message:
+                await interaction.followup.send(current_message)
+        else:
+            await interaction.followup.send(tour_dates_message)
+            
+    except Exception as e:
+        logger.error(f"Error in tour_dates command: {e}")
+        await interaction.followup.send("An error occurred while fetching tour dates. Please try again later.")
+
 def main():
-    logger.info("Starting Goose Tour Date Scraper")
+    """Main function to run the Discord bot."""
+    logger.info("Starting Goose Tour Date Bot")
     logger.info("=" * 50)
     
-    while True:
-        try:
-            # Scrape the tour dates
-            tour_dates = scrape_goose_tour_dates()
-            
-            if not tour_dates:
-                logger.warning("No tour dates found. The page structure may have changed.")
-            else:
-                # Sort dates chronologically using the first date for date ranges
-                tour_dates.sort(key=lambda x: x['date'].split(" to ")[0])
-                
-                # Print tour dates in a readable format
-                logger.info(f"\nFound {len(tour_dates)} tour dates:")
-                logger.info("=" * 50)
-                
-                # Group events by month for better readability
-                events_by_month = {}
-                
-                # First, group events by month
-                for date in tour_dates:
-                    try:
-                        # Get the month from the date
-                        date_obj = datetime.strptime(date['date'].split(" to ")[0], "%Y-%m-%d")
-                        month = date_obj.strftime("%B %Y")
-                        
-                        if month not in events_by_month:
-                            events_by_month[month] = []
-                        events_by_month[month].append(date)
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing date: {e}")
-                        continue
-                
-                # Then print events grouped by month
-                for month in sorted(events_by_month.keys()):
-                    # Format month header with extra spacing
-                    month_output = [
-                        "\n" + "=" * 50,  # Add separator before month
-                        month,
-                        "-" * len(month)
-                    ]
-                    logger.info("\n".join(month_output))
-                    
-                    # Sort events within each month by date
-                    month_events = sorted(events_by_month[month], 
-                                       key=lambda x: x['date'].split(" to ")[0])
-                    
-                    # Format all events in this month
-                    for date in month_events:
-                        try:
-                            # Format and log each event as a single message
-                            logger.info(format_event_output(date))
-                        except Exception as e:
-                            logger.error(f"Error formatting event: {e}")
-                            continue
-                
-                # Add a final separator after all events
-                logger.info("\n" + "=" * 50)
-            
-            # Wait for 24 hours before next check
-            logger.info("\nWaiting 24 hours before next check...")
-            time.sleep(24 * 60 * 60)  # 24 hours in seconds
-            
-        except KeyboardInterrupt:
-            logger.info("Received shutdown signal, stopping...")
-            break
-        except Exception as e:
-            logger.error(f"Unexpected error in main loop: {e}")
-            # Wait 5 minutes before retrying on error
-            logger.info("Waiting 5 minutes before retry...")
-            time.sleep(5 * 60)  # 5 minutes in seconds
+    # Get the Discord token from environment variables
+    token = os.getenv('DISCORD_TOKEN')
+    if not token:
+        logger.error("No Discord token found in environment variables!")
+        return
+    
+    # Run the Discord bot
+    bot.run(token)
 
 if __name__ == "__main__":
     main()
