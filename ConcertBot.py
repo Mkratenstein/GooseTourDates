@@ -1,11 +1,15 @@
-from playwright.sync_api import sync_playwright
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 from datetime import datetime
 import os
 import time
 import logging
-import subprocess
-import sys
 
 # Configure logging
 logging.basicConfig(
@@ -14,132 +18,129 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def install_playwright_deps():
-    """Install Playwright dependencies if not already installed."""
+def setup_driver():
+    """Set up and return a Chrome WebDriver instance."""
     try:
-        logger.info("Installing Playwright dependencies...")
-        subprocess.run(["playwright", "install", "chromium"], check=True)
-        logger.info("Playwright dependencies installed successfully")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to install Playwright dependencies: {e}")
-        sys.exit(1)
-    except FileNotFoundError:
-        logger.error("Playwright command not found. Installing Playwright...")
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "playwright"], check=True)
-            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-            logger.info("Playwright and dependencies installed successfully")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to install Playwright: {e}")
-            sys.exit(1)
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-infobars')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        
+        # Use webdriver_manager to handle driver installation
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+    except Exception as e:
+        logger.error(f"Error setting up Chrome driver: {e}")
+        raise
 
 def scrape_goose_tour_dates():
-    with sync_playwright() as p:
-        # Launch browser with additional args for container environment
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        )
-        page = browser.new_page()
+    driver = None
+    try:
+        # Set up the driver
+        logger.info("Setting up Chrome driver...")
+        driver = setup_driver()
         
-        try:
-            # Navigate to tour page
-            logger.info("Navigating to Goose tour page...")
-            page.goto("https://www.goosetheband.com/tour", wait_until='networkidle')
-            
-            # Wait for the tour data to load
-            page.wait_for_selector('.tour-dates-container', timeout=30000)
-            
-            # Extract tour data using JavaScript in the page context
-            logger.info("Extracting tour dates...")
-            tour_dates = page.evaluate('''
-                () => {
-                    const dates = [];
-                    // Select all event containers
-                    document.querySelectorAll('.tour-dates-container .touring-event').forEach(el => {
-                        // Check if it's not a past event (some sites gray out or mark past events)
-                        if (!el.classList.contains('past-event')) {
-                            // Extract date info
-                            const dateElement = el.querySelector('.date-text');
-                            const dateStr = dateElement ? dateElement.innerText.trim() : '';
-                            
-                            // Extract venue info
-                            const venueElement = el.querySelector('.event-venue');
-                            const venue = venueElement ? venueElement.innerText.trim() : '';
-                            
-                            // Extract location info
-                            const locationElement = el.querySelector('.event-location');
-                            const location = locationElement ? locationElement.innerText.trim() : '';
-                            
-                            // Extract ticket link
-                            const ticketElement = el.querySelector('a.tickets-button');
-                            const ticketLink = ticketElement ? ticketElement.href : '';
-                            
-                            // Extract any additional info (like festival name, support acts)
-                            const infoElement = el.querySelector('.event-info');
-                            const additionalInfo = infoElement ? infoElement.innerText.trim() : '';
-                            
-                            dates.push({
-                                date: dateStr,
-                                venue: venue,
-                                location: location,
-                                ticketLink: ticketLink,
-                                additionalInfo: additionalInfo
-                            });
-                        }
-                    });
-                    return dates;
-                }
-            ''')
-            
-            # Process dates to ensure consistent format if needed
-            processed_dates = []
-            for event in tour_dates:
-                # Try to parse and standardize the date format
-                try:
-                    date_str = event['date']
-                    # Handle various date formats that might be used
-                    date_obj = None
-                    
-                    # Try common formats
-                    for fmt in ['%b %d, %Y', '%B %d, %Y', '%m/%d/%Y']:
-                        try:
-                            date_obj = datetime.strptime(date_str, fmt)
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if date_obj:
-                        # Use a standard date format for the output
-                        event['date'] = date_obj.strftime('%Y-%m-%d')
-                    
-                except Exception as e:
-                    logger.warning(f"Could not parse date '{event['date']}': {e}")
-                
-                processed_dates.append(event)
-            
-            return processed_dates
-            
-        except Exception as e:
-            logger.error(f"Error scraping tour dates: {e}")
-            return None
-        finally:
+        # Navigate to tour page
+        logger.info("Navigating to Goose tour page...")
+        driver.get("https://www.goosetheband.com/tour")
+        
+        # Wait for the tour data to load
+        logger.info("Waiting for tour dates to load...")
+        wait = WebDriverWait(driver, 30)
+        tour_container = wait.until(
+            EC.presence_of_element_located((By.CLASS_NAME, "tour-dates-container"))
+        )
+        
+        # Extract tour data
+        logger.info("Extracting tour dates...")
+        tour_dates = []
+        
+        # Find all event containers
+        event_elements = driver.find_elements(By.CSS_SELECTOR, ".tour-dates-container .touring-event")
+        
+        for event in event_elements:
             try:
-                browser.close()
+                # Skip past events
+                if "past-event" in event.get_attribute("class"):
+                    continue
+                
+                # Extract date info
+                date_element = event.find_element(By.CSS_SELECTOR, ".date-text")
+                date_str = date_element.text.strip() if date_element else ""
+                
+                # Extract venue info
+                venue_element = event.find_element(By.CSS_SELECTOR, ".event-venue")
+                venue = venue_element.text.strip() if venue_element else ""
+                
+                # Extract location info
+                location_element = event.find_element(By.CSS_SELECTOR, ".event-location")
+                location = location_element.text.strip() if location_element else ""
+                
+                # Extract ticket link
+                ticket_element = event.find_element(By.CSS_SELECTOR, "a.tickets-button")
+                ticket_link = ticket_element.get_attribute("href") if ticket_element else ""
+                
+                # Extract additional info
+                info_element = event.find_element(By.CSS_SELECTOR, ".event-info")
+                additional_info = info_element.text.strip() if info_element else ""
+                
+                tour_dates.append({
+                    "date": date_str,
+                    "venue": venue,
+                    "location": location,
+                    "ticketLink": ticket_link,
+                    "additionalInfo": additional_info
+                })
+                
+            except Exception as e:
+                logger.warning(f"Error processing event: {e}")
+                continue
+        
+        # Process dates to ensure consistent format
+        processed_dates = []
+        for event in tour_dates:
+            try:
+                date_str = event["date"]
+                # Handle various date formats
+                date_obj = None
+                
+                # Try common formats
+                for fmt in ["%b %d, %Y", "%B %d, %Y", "%m/%d/%Y"]:
+                    try:
+                        date_obj = datetime.strptime(date_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                if date_obj:
+                    # Use a standard date format for the output
+                    event["date"] = date_obj.strftime("%Y-%m-%d")
+                
+            except Exception as e:
+                logger.warning(f"Could not parse date '{event['date']}': {e}")
+            
+            processed_dates.append(event)
+        
+        return processed_dates
+        
+    except Exception as e:
+        logger.error(f"Error scraping tour dates: {e}")
+        return None
+    finally:
+        if driver:
+            try:
+                driver.quit()
             except Exception as e:
                 logger.error(f"Error closing browser: {e}")
 
 def main():
     logger.info("Starting Goose Tour Date Scraper")
     logger.info("=" * 50)
-    
-    # Install Playwright dependencies
-    install_playwright_deps()
     
     while True:
         try:
@@ -156,8 +157,8 @@ def main():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 
                 # Use Railway's data directory if available, otherwise use current directory
-                data_dir = os.getenv('RAILWAY_DATA_DIR', '.')
-                csv_filename = os.path.join(data_dir, f'goose_tour_dates_{timestamp}.csv')
+                data_dir = os.getenv("RAILWAY_DATA_DIR", ".")
+                csv_filename = os.path.join(data_dir, f"goose_tour_dates_{timestamp}.csv")
                 
                 # Export to CSV
                 df.to_csv(csv_filename, index=False)
