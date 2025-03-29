@@ -61,7 +61,7 @@ def setup_driver():
         chrome_options.binary_location = '/usr/bin/google-chrome'
         
         # Create service with specific ChromeDriver path
-        service = Service('/usr/bin/chromedriver')
+        service = Service('/usr/local/bin/chromedriver')
         
         # Create driver
         driver = webdriver.Chrome(service=service, options=chrome_options)
