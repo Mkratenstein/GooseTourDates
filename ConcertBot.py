@@ -175,35 +175,51 @@ def get_tour_dates():
     url = "https://www.goosetheband.com/tour"
     try:
         print("Fetching tour dates from website...")
-        response = requests.get(url)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         print(f"Response status code: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
         print("Successfully parsed HTML")
         
-        # Print the HTML content for debugging
-        print("HTML Content Preview:")
-        print(soup.prettify()[:500])  # Print first 500 chars for debugging
-        
         tour_dates = []
-        # Update selectors based on actual website structure
-        events = soup.find_all('div', class_='tour-date')
-        print(f"Found {len(events)} tour date elements")
+        # Look for tour dates in the main content area
+        events = soup.find_all('div', class_='event')
+        print(f"Found {len(events)} event elements")
         
         for event in events:
             try:
-                date = event.find('div', class_='date')
-                venue = event.find('div', class_='venue')
-                location = event.find('div', class_='location')
+                # Try different possible selectors for date
+                date_elem = (
+                    event.find('div', class_='date') or 
+                    event.find('div', class_='event-date') or
+                    event.find('span', class_='date')
+                )
                 
-                if not all([date, venue, location]):
+                # Try different possible selectors for venue
+                venue_elem = (
+                    event.find('div', class_='venue') or 
+                    event.find('div', class_='event-venue') or
+                    event.find('span', class_='venue')
+                )
+                
+                # Try different possible selectors for location
+                location_elem = (
+                    event.find('div', class_='location') or 
+                    event.find('div', class_='event-location') or
+                    event.find('span', class_='location')
+                )
+                
+                if not all([date_elem, venue_elem, location_elem]):
                     print("Missing required elements in event")
                     continue
                 
-                date_text = date.text.strip()
-                venue_text = venue.text.strip()
-                location_text = location.text.strip()
+                date_text = date_elem.text.strip()
+                venue_text = venue_elem.text.strip()
+                location_text = location_elem.text.strip()
                 
                 print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
                 
@@ -217,7 +233,38 @@ def get_tour_dates():
                 continue
         
         if not tour_dates:
+            # Try alternative selectors if no events found
+            print("No tour dates found with primary selectors, trying alternatives...")
+            events = soup.find_all(['div', 'li'], class_=['tour-date', 'event-item', 'tour-event'])
+            print(f"Found {len(events)} alternative event elements")
+            
+            for event in events:
+                try:
+                    # Try to find date, venue, and location in the text content
+                    text_content = event.get_text(separator='\n').strip()
+                    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+                    
+                    if len(lines) >= 3:
+                        date_text = lines[0]
+                        venue_text = lines[1]
+                        location_text = lines[2]
+                        
+                        print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
+                        
+                        tour_dates.append({
+                            'date': date_text,
+                            'venue': venue_text,
+                            'location': location_text
+                        })
+                except Exception as e:
+                    print(f"Error processing alternative event: {e}")
+                    continue
+        
+        if not tour_dates:
             print("No tour dates found in the parsed HTML")
+            # Print the full HTML for debugging
+            print("Full HTML content:")
+            print(soup.prettify())
             return None
             
         print(f"Successfully found {len(tour_dates)} tour dates")
