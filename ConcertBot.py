@@ -76,6 +76,41 @@ def setup_driver():
         logger.error(f"Error setting up Chrome driver: {e}")
         raise
 
+def process_date(date_str):
+    """Process a date string and return a standardized format."""
+    try:
+        # Check if it's a date range
+        if " - " in date_str:
+            start_date, end_date = date_str.split(" - ")
+            # Process both dates
+            start_obj = None
+            end_obj = None
+            
+            # Try common formats for both dates
+            for fmt in ["%b %d, %Y", "%B %d, %Y", "%m/%d/%Y"]:
+                try:
+                    start_obj = datetime.strptime(start_date.strip(), fmt)
+                    end_obj = datetime.strptime(end_date.strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+            
+            if start_obj and end_obj:
+                return f"{start_obj.strftime('%Y-%m-%d')} to {end_obj.strftime('%Y-%m-%d')}"
+        
+        # Single date processing
+        for fmt in ["%b %d, %Y", "%B %d, %Y", "%m/%d/%Y"]:
+            try:
+                date_obj = datetime.strptime(date_str, fmt)
+                return date_obj.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        
+        return date_str  # Return original if no format matches
+    except Exception as e:
+        logger.warning(f"Could not parse date '{date_str}': {e}")
+        return date_str
+
 def scrape_goose_tour_dates():
     driver = None
     try:
@@ -176,26 +211,7 @@ def scrape_goose_tour_dates():
         # Process dates to ensure consistent format
         processed_dates = []
         for event in tour_dates:
-            try:
-                date_str = event["date"]
-                # Handle various date formats
-                date_obj = None
-                
-                # Try common formats
-                for fmt in ["%b %d, %Y", "%B %d, %Y", "%m/%d/%Y"]:
-                    try:
-                        date_obj = datetime.strptime(date_str, fmt)
-                        break
-                    except ValueError:
-                        continue
-                
-                if date_obj:
-                    # Use a standard date format for the output
-                    event["date"] = date_obj.strftime("%Y-%m-%d")
-                
-            except Exception as e:
-                logger.warning(f"Could not parse date '{event['date']}': {e}")
-            
+            event["date"] = process_date(event["date"])
             processed_dates.append(event)
         
         return processed_dates
@@ -214,6 +230,21 @@ def scrape_goose_tour_dates():
             except Exception as e:
                 logger.error(f"Error closing browser: {e}")
 
+def format_date_for_display(date_str):
+    """Format date string for display in Month Day, YYYY format."""
+    try:
+        if " to " in date_str:
+            start_date, end_date = date_str.split(" to ")
+            start_obj = datetime.strptime(start_date, "%Y-%m-%d")
+            end_obj = datetime.strptime(end_date, "%Y-%m-%d")
+            return f"{start_obj.strftime('%B %d, %Y')} to {end_obj.strftime('%B %d, %Y')}"
+        else:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            return date_obj.strftime("%B %d, %Y")
+    except Exception as e:
+        logger.warning(f"Could not format date '{date_str}': {e}")
+        return date_str
+
 def main():
     logger.info("Starting Goose Tour Date Scraper")
     logger.info("=" * 50)
@@ -226,14 +257,14 @@ def main():
             if not tour_dates:
                 logger.warning("No tour dates found. The page structure may have changed.")
             else:
-                # Sort dates chronologically
-                tour_dates.sort(key=lambda x: x['date'])
+                # Sort dates chronologically using the first date for date ranges
+                tour_dates.sort(key=lambda x: x['date'].split(" to ")[0])
                 
                 # Print tour dates in a readable format
                 logger.info(f"\nFound {len(tour_dates)} tour dates:")
                 logger.info("=" * 50)
                 for date in tour_dates:
-                    logger.info(f"Date: {date['date']}")
+                    logger.info(f"Date: {format_date_for_display(date['date'])}")
                     logger.info(f"Venue: {date['venue']}")
                     logger.info(f"Location: {date['location']}")
                     logger.info(f"Ticket Links: {date['ticketLinks']}")
