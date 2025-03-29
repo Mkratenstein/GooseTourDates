@@ -15,13 +15,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver (using version 114 which is compatible with newer Chrome versions)
-RUN wget -q "https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip" \
-    && unzip chromedriver_linux64.zip -d /usr/local/bin \
-    && rm chromedriver_linux64.zip \
-    && chmod +x /usr/local/bin/chromedriver \
-    && ln -s /usr/local/bin/chromedriver /usr/bin/chromedriver
-
 # Set up working directory
 WORKDIR /app
 

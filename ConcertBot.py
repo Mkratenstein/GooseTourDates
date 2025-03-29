@@ -4,6 +4,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 from datetime import datetime
 import os
@@ -62,8 +63,8 @@ def setup_driver():
         # Use the system Chrome binary
         chrome_options.binary_location = '/usr/bin/google-chrome'
         
-        # Create service with specific ChromeDriver path
-        service = Service('/usr/local/bin/chromedriver')
+        # Use webdriver-manager to handle ChromeDriver installation
+        service = Service(ChromeDriverManager().install())
         
         # Create driver with service and options
         driver = webdriver.Chrome(service=service, options=chrome_options)
