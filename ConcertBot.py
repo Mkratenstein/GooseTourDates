@@ -306,11 +306,32 @@ def format_event_output(event):
     
     # Add ticket links if present
     if event['ticketLinks']:
-        output_lines.append(f"Ticket Links: {event['ticketLinks']}")
+        # Split ticket links into multiple lines if too long
+        ticket_lines = []
+        current_line = "Ticket Links: "
+        for link in event['ticketLinks'].split("; "):
+            if len(current_line + link) > 80:  # Reasonable line length
+                ticket_lines.append(current_line)
+                current_line = "  " + link
+            else:
+                current_line += "; " + link
+        ticket_lines.append(current_line)
+        output_lines.extend(ticket_lines)
     
     # Add additional info if present
     if event['additionalInfo']:
-        output_lines.append(f"Additional Info: {event['additionalInfo']}")
+        # Split additional info into multiple lines if too long
+        info_lines = []
+        current_line = "Additional Info: "
+        words = event['additionalInfo'].split()
+        for word in words:
+            if len(current_line + " " + word) > 80:  # Reasonable line length
+                info_lines.append(current_line)
+                current_line = "  " + word
+            else:
+                current_line += " " + word
+        info_lines.append(current_line)
+        output_lines.extend(info_lines)
     
     # Add separator with consistent length
     output_lines.append("-" * 50)
@@ -323,7 +344,7 @@ def get_formatted_tour_dates():
     tour_dates = scrape_goose_tour_dates()
     
     if not tour_dates:
-        return "No tour dates found. The page structure may have changed."
+        return ["No tour dates found. The page structure may have changed."]
     
     # Sort dates chronologically using the first date for date ranges
     tour_dates.sort(key=lambda x: x['date'].split(" to ")[0])
@@ -346,19 +367,20 @@ def get_formatted_tour_dates():
             logger.error(f"Error processing date: {e}")
             continue
     
-    # Build the output message
-    output_lines = []
-    output_lines.append(f"Found {len(tour_dates)} tour dates:")
-    output_lines.append("=" * 50)
+    # Create separate messages for each month
+    messages = []
     
-    # Then format events grouped by month
+    # Add header message with total count
+    header_message = f"Found {len(tour_dates)} tour dates:"
+    messages.append(header_message)
+    
+    # Create a message for each month
     for month in sorted(events_by_month.keys()):
-        # Format month header
-        month_output = [
+        # Start with month header
+        month_message = [
             f"\n{month}",
             "-" * len(month)
         ]
-        output_lines.extend(month_output)
         
         # Sort events within each month by date
         month_events = sorted(events_by_month[month], 
@@ -367,32 +389,52 @@ def get_formatted_tour_dates():
         # Format all events in this month
         for date in month_events:
             try:
-                output_lines.append(format_event_output(date))
+                month_message.append(format_event_output(date))
             except Exception as e:
                 logger.error(f"Error formatting event: {e}")
                 continue
+        
+        # Join the month message
+        messages.append("\n".join(month_message))
     
-    return "\n".join(output_lines)
+    return messages
 
-async def split_and_send_message(interaction: discord.Interaction, message: str, max_length: int = 1900):
-    """Split and send a long message in chunks."""
+async def send_monthly_messages(interaction: discord.Interaction, messages: list):
+    """Send multiple messages, one for each month."""
     try:
-        # Split by month separators
-        parts = message.split("\n" + "=" * 50)
-        current_message = parts[0]
+        # Send the header message first
+        await interaction.followup.send(messages[0], ephemeral=True)
         
-        for part in parts[1:]:
-            next_chunk = "\n" + "=" * 50 + part
-            if len(current_message + next_chunk) > max_length:
-                await interaction.followup.send(current_message, ephemeral=True)
-                current_message = "=" * 50 + part
+        # Send each month's message
+        for message in messages[1:]:
+            # Double-check the length before sending
+            if len(message) > 1900:
+                # If a month's message is too long, split it by events
+                events = message.split("\n\n" + "-" * 50)
+                current_chunk = events[0]
+                
+                for event in events[1:]:
+                    event_chunk = "\n\n" + "-" * 50 + event
+                    if len(current_chunk + event_chunk) > 1900:
+                        await interaction.followup.send(current_chunk, ephemeral=True)
+                        current_chunk = "-" * 50 + event
+                    else:
+                        current_chunk += event_chunk
+                
+                if current_chunk:
+                    await interaction.followup.send(current_chunk, ephemeral=True)
             else:
-                current_message += next_chunk
-        
-        if current_message:
-            await interaction.followup.send(current_message, ephemeral=True)
+                await interaction.followup.send(message, ephemeral=True)
+                
     except Exception as e:
-        logger.error(f"Error splitting and sending message: {e}")
+        logger.error(f"Error sending monthly messages: {e}")
+        try:
+            await interaction.followup.send(
+                "An error occurred while sending the tour dates. Please try again later.",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send error message to user")
         raise
 
 @bot.event
@@ -461,11 +503,11 @@ async def tour_dates(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)  # Make the response ephemeral
     
     try:
-        # Get the tour dates
-        tour_dates_message = get_formatted_tour_dates()
+        # Get the tour dates grouped by month
+        monthly_messages = get_formatted_tour_dates()
         
-        # Split and send the message
-        await split_and_send_message(interaction, tour_dates_message)
+        # Send the messages
+        await send_monthly_messages(interaction, monthly_messages)
             
     except Exception as e:
         logger.error(f"Error in tour_dates command: {e}")
