@@ -84,7 +84,8 @@ def format_event_output(event):
             else:
                 current_line += " " + word
         info_lines.append(current_line)
-        output_lines.extend(info_lines)
+        # Format each line in italics
+        output_lines.extend([f"*{line.strip()}*" for line in info_lines])
     
     # Add ticket links if present
     if event['ticketLinks']:
@@ -179,7 +180,7 @@ def get_formatted_tour_dates(month=None):
             return ["No upcoming tour dates found."]
             
         message = "**Goose Tour Dates**\n\n"
-        message += "**Available Tour Months:**\n"
+        message += "**Goose the Organization is playing during these months:**\n"
         message += "• " + "\n• ".join(available_months) + "\n\n"
         message += "Use `/tourdates [month]` to view shows for a specific month."
         return [message]
