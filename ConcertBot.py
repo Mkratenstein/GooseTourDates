@@ -219,18 +219,47 @@ def get_tour_dates():
             seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
             print(f"Fetching Seated data from: {seated_url}")
             
+            # Headers specific to the Seated API
+            seated_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Origin': 'https://www.goosetheband.com',
+                'Referer': 'https://www.goosetheband.com/tour',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'cross-site'
+            }
+            
             try:
-                seated_response = requests.get(seated_url, headers=headers)
+                seated_response = requests.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
-                seated_data = seated_response.json()
                 print(f"Seated API response status: {seated_response.status_code}")
-                print(f"Seated data: {seated_data}")
+                print(f"Seated API response headers: {seated_response.headers}")
+                print(f"Seated API response content: {seated_response.text[:500]}...")  # Print first 500 chars
+                
+                seated_data = seated_response.json()
                 
                 for event in seated_data.get('events', []):
                     try:
+                        # Parse the date from the event data
                         date_text = event.get('date', '')
+                        if not date_text:
+                            # Try to construct date from start_time if available
+                            start_time = event.get('start_time')
+                            if start_time:
+                                try:
+                                    # Convert timestamp to readable date
+                                    date = datetime.datetime.fromtimestamp(start_time)
+                                    date_text = date.strftime('%B %d, %Y')
+                                except:
+                                    date_text = "Date TBA"
+                        
                         venue_text = event.get('venue', {}).get('name', 'Venue TBA')
-                        location_text = f"{event.get('venue', {}).get('city', '')}, {event.get('venue', {}).get('state', '')}"
+                        city = event.get('venue', {}).get('city', '')
+                        state = event.get('venue', {}).get('state', '')
+                        location_text = f"{city}, {state}" if city and state else "Location TBA"
                         
                         if date_text and venue_text and location_text:
                             print(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
@@ -242,9 +271,19 @@ def get_tour_dates():
                     except Exception as e:
                         print(f"Error processing Seated event: {e}")
                         continue
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 print(f"Error fetching Seated data: {e}")
-                print(f"Seated response content: {e.response.text if hasattr(e, 'response') else 'No response content'}")
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"Seated response status: {e.response.status_code}")
+                    print(f"Seated response headers: {e.response.headers}")
+                    print(f"Seated response content: {e.response.text}")
+            except json.JSONDecodeError as e:
+                print(f"Error decoding Seated JSON: {e}")
+                print(f"Raw response: {seated_response.text}")
+            except Exception as e:
+                print(f"Unexpected error with Seated API: {e}")
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}")
         else:
             print("Could not find Seated widget in HTML")
             # Print the full HTML for debugging
