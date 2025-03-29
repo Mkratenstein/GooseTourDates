@@ -40,8 +40,8 @@ WEBSOCKET_TIMEOUT = 30
 CONNECTION_TIMEOUT = ClientTimeout(total=30, connect=10)
 MESSAGE_RETRY_DELAY = 2  # Delay between message retries
 MESSAGE_SEND_DELAY = 1  # Delay between sending messages to avoid rate limits
-HEARTBEAT_TIMEOUT = 15  # Maximum time to wait for heartbeat response
-HEARTBEAT_INTERVAL = 5  # Time between heartbeat checks
+HEARTBEAT_TIMEOUT = 30  # Maximum time to wait for heartbeat response
+HEARTBEAT_INTERVAL = 10  # Time between heartbeat checks
 
 # Add connection state tracking
 connection_attempts = 0
@@ -49,6 +49,7 @@ last_connection_time = 0
 is_reconnecting = False
 last_heartbeat = 0
 heartbeat_task = None
+session = None
 
 async def create_session():
     """Create a new aiohttp session with proper timeout settings."""
@@ -148,23 +149,29 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
 
 async def check_heartbeat():
     """Monitor heartbeat and handle disconnections."""
-    global last_heartbeat, heartbeat_task
+    global last_heartbeat, heartbeat_task, is_reconnecting
     while True:
         try:
+            if not bot.is_ready():
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                continue
+                
             current_time = time.time()
             if current_time - last_heartbeat > HEARTBEAT_TIMEOUT:
                 logger.warning("Heartbeat timeout detected, initiating reconnection...")
                 if not is_reconnecting:
+                    is_reconnecting = True
                     await handle_disconnect()
             await asyncio.sleep(HEARTBEAT_INTERVAL)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.error(f"Error in heartbeat check: {e}")
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 async def handle_disconnect():
     """Handle bot disconnection and reconnection."""
-    global connection_attempts, is_reconnecting, heartbeat_task
-    is_reconnecting = True
+    global connection_attempts, is_reconnecting, heartbeat_task, session
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
     
     # Cancel existing heartbeat task if it exists
@@ -174,6 +181,11 @@ async def handle_disconnect():
             await heartbeat_task
         except asyncio.CancelledError:
             pass
+    
+    # Close existing session if it exists
+    if session and not session.closed:
+        await session.close()
+        session = None
     
     for attempt in range(MAX_RECONNECT_ATTEMPTS):
         try:
@@ -270,7 +282,7 @@ async def restart_bot():
 @bot.event
 async def on_ready():
     """Called when the bot is ready and connected to Discord."""
-    global connection_attempts, last_connection_time, last_heartbeat, heartbeat_task
+    global connection_attempts, last_connection_time, last_heartbeat, heartbeat_task, session
     connection_attempts = 0
     last_connection_time = time.time()
     last_heartbeat = time.time()
@@ -299,9 +311,10 @@ async def on_ready():
 @bot.event
 async def on_disconnect():
     """Called when the bot disconnects from Discord."""
-    global last_heartbeat
-    last_heartbeat = time.time()  # Reset heartbeat timestamp
-    await handle_disconnect()
+    global last_heartbeat, is_reconnecting
+    if not is_reconnecting:  # Only handle if not already reconnecting
+        last_heartbeat = time.time()  # Reset heartbeat timestamp
+        await handle_disconnect()
 
 @bot.event
 async def on_heartbeat():
