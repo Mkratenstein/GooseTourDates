@@ -14,6 +14,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +36,10 @@ logger.addHandler(file_handler)
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Add connection retry settings
+MAX_RETRIES = 3
+RETRY_DELAY = 5
 
 def get_chrome_version():
     """Get the installed Chrome version."""
@@ -369,6 +374,27 @@ def get_formatted_tour_dates():
     
     return "\n".join(output_lines)
 
+async def split_and_send_message(interaction: discord.Interaction, message: str, max_length: int = 1900):
+    """Split and send a long message in chunks."""
+    try:
+        # Split by month separators
+        parts = message.split("\n" + "=" * 50)
+        current_message = parts[0]
+        
+        for part in parts[1:]:
+            next_chunk = "\n" + "=" * 50 + part
+            if len(current_message + next_chunk) > max_length:
+                await interaction.followup.send(current_message, ephemeral=True)
+                current_message = "=" * 50 + part
+            else:
+                current_message += next_chunk
+        
+        if current_message:
+            await interaction.followup.send(current_message, ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error splitting and sending message: {e}")
+        raise
+
 @bot.event
 async def on_ready():
     """Called when the bot is ready and connected to Discord."""
@@ -380,6 +406,23 @@ async def on_ready():
         logger.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
+
+@bot.event
+async def on_disconnect():
+    """Called when the bot disconnects from Discord."""
+    logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
+    for attempt in range(MAX_RETRIES):
+        try:
+            await bot.close()
+            await bot.start(os.getenv('DISCORD_TOKEN'))
+            logger.info("Successfully reconnected to Discord")
+            return
+        except Exception as e:
+            logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                logger.error("Failed to reconnect after maximum attempts")
 
 @bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
@@ -421,30 +464,18 @@ async def tour_dates(interaction: discord.Interaction):
         # Get the tour dates
         tour_dates_message = get_formatted_tour_dates()
         
-        # Split the message if it's too long (Discord has a 2000 character limit)
-        if len(tour_dates_message) > 1900:  # Leave some room for formatting
-            # Split by month separators
-            parts = tour_dates_message.split("\n" + "=" * 50)
-            current_message = parts[0]
-            
-            for part in parts[1:]:
-                if len(current_message + "\n" + "=" * 50 + part) > 1900:
-                    await interaction.followup.send(current_message, ephemeral=True)
-                    current_message = "=" * 50 + part
-                else:
-                    current_message += "\n" + "=" * 50 + part
-            
-            if current_message:
-                await interaction.followup.send(current_message, ephemeral=True)
-        else:
-            await interaction.followup.send(tour_dates_message, ephemeral=True)
+        # Split and send the message
+        await split_and_send_message(interaction, tour_dates_message)
             
     except Exception as e:
         logger.error(f"Error in tour_dates command: {e}")
-        await interaction.followup.send(
-            "An error occurred while fetching tour dates. Please try again later.",
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                "An error occurred while fetching tour dates. Please try again later.",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send error message to user")
 
 def main():
     """Main function to run the Discord bot."""
@@ -457,8 +488,15 @@ def main():
         logger.error("No Discord token found in environment variables!")
         return
     
-    # Run the Discord bot
-    bot.run(token)
+    # Run the Discord bot with retry logic
+    while True:
+        try:
+            bot.run(token)
+            break
+        except Exception as e:
+            logger.error(f"Bot crashed: {e}")
+            logger.info(f"Attempting to restart in {RETRY_DELAY} seconds...")
+            time.sleep(RETRY_DELAY)
 
 if __name__ == "__main__":
     main()
