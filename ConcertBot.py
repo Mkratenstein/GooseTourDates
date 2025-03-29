@@ -66,6 +66,8 @@ def get_tour_dates():
             
             # Look for app.js script
             app_js_script = soup.find('script', {'src': '/app.js'})
+            discovered_endpoints = []  # Initialize at the top level
+            
             if app_js_script:
                 app_js_url = f"https://widget.seated.com{app_js_script['src']}"
                 logger.info(f"Found app.js URL: {app_js_url}")
@@ -84,12 +86,11 @@ def get_tour_dates():
                         r'endpoint\s*=\s*[\'"]([^\'"]+)[\'"]'
                     ]
                     
-                    api_endpoints = []
                     for pattern in api_patterns:
                         matches = re.findall(pattern, app_js_content)
                         if matches:
                             logger.info(f"Found API endpoints in app.js: {matches}")
-                            api_endpoints.extend(matches)
+                            discovered_endpoints.extend(matches)
                     
                     # Look for widget initialization code
                     init_patterns = [
@@ -125,8 +126,9 @@ def get_tour_dates():
             ]
             
             # Add any endpoints found in app.js
-            if api_endpoints:
-                base_endpoints.extend(api_endpoints)
+            if discovered_endpoints:
+                logger.info(f"Adding discovered endpoints: {discovered_endpoints}")
+                base_endpoints.extend(discovered_endpoints)
             
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
