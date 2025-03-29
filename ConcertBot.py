@@ -297,18 +297,18 @@ def format_event_output(event):
     """Format a single event's output as a single string."""
     output_lines = []
     
-    # Always start with date
-    output_lines.append(f"Date: {format_date_for_display(event['date'])}")
+    # Format date with bold
+    output_lines.append(f"**Date:** {format_date_for_display(event['date'])}")
     
-    # Add venue and location
-    output_lines.append(f"Venue: {event['venue']}")
-    output_lines.append(f"Location: {event['location']}")
+    # Add venue and location with bold headers
+    output_lines.append(f"**Venue:** {event['venue']}")
+    output_lines.append(f"**Location:** {event['location']}")
     
     # Add ticket links if present
     if event['ticketLinks']:
         # Split ticket links into multiple lines if too long
         ticket_lines = []
-        current_line = "Ticket Links: "
+        current_line = "**Ticket Links:** "
         for link in event['ticketLinks'].split("; "):
             if len(current_line + link) > 80:  # Reasonable line length
                 ticket_lines.append(current_line)
@@ -322,7 +322,7 @@ def format_event_output(event):
     if event['additionalInfo']:
         # Split additional info into multiple lines if too long
         info_lines = []
-        current_line = "Additional Info: "
+        current_line = "**Additional Info:** "
         words = event['additionalInfo'].split()
         for word in words:
             if len(current_line + " " + word) > 80:  # Reasonable line length
@@ -333,8 +333,8 @@ def format_event_output(event):
         info_lines.append(current_line)
         output_lines.extend(info_lines)
     
-    # Add separator with consistent length
-    output_lines.append("-" * 50)
+    # Add separator with emoji
+    output_lines.append("🎸" * 20)
     
     # Join with double newlines for better spacing
     return "\n\n".join(output_lines)
@@ -370,16 +370,16 @@ def get_formatted_tour_dates():
     # Create separate messages for each month
     messages = []
     
-    # Add header message with total count
-    header_message = f"Found {len(tour_dates)} tour dates:"
+    # Add header message with total count and emoji
+    header_message = f"🎵 **Goose Tour Dates** 🎵\nFound {len(tour_dates)} upcoming shows:"
     messages.append(header_message)
     
     # Create a message for each month
     for month in sorted(events_by_month.keys()):
-        # Start with month header
+        # Start with month header using bold and emoji
         month_message = [
-            f"\n{month}",
-            "-" * len(month)
+            f"\n📅 **{month}**",
+            "🎸" * 20
         ]
         
         # Sort events within each month by date
@@ -410,14 +410,14 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
             # Double-check the length before sending
             if len(message) > 1900:
                 # If a month's message is too long, split it by events
-                events = message.split("\n\n" + "-" * 50)
+                events = message.split("\n\n" + "🎸" * 20)
                 current_chunk = events[0]
                 
                 for event in events[1:]:
-                    event_chunk = "\n\n" + "-" * 50 + event
+                    event_chunk = "\n\n" + "🎸" * 20 + event
                     if len(current_chunk + event_chunk) > 1900:
                         await interaction.followup.send(current_chunk, ephemeral=True)
-                        current_chunk = "-" * 50 + event
+                        current_chunk = "🎸" * 20 + event
                     else:
                         current_chunk += event_chunk
                 
@@ -430,7 +430,7 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         logger.error(f"Error sending monthly messages: {e}")
         try:
             await interaction.followup.send(
-                "An error occurred while sending the tour dates. Please try again later.",
+                "❌ An error occurred while sending the tour dates. Please try again later.",
                 ephemeral=True
             )
         except:
