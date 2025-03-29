@@ -40,6 +40,8 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Add connection retry settings
 MAX_RETRIES = 3
 RETRY_DELAY = 5
+MAX_RECONNECT_ATTEMPTS = 5
+RECONNECT_DELAY = 10
 
 def get_chrome_version():
     """Get the installed Chrome version."""
@@ -453,18 +455,66 @@ async def on_ready():
 async def on_disconnect():
     """Called when the bot disconnects from Discord."""
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
-    for attempt in range(MAX_RETRIES):
+    
+    for attempt in range(MAX_RECONNECT_ATTEMPTS):
         try:
-            await bot.close()
-            await bot.start(os.getenv('DISCORD_TOKEN'))
+            logger.info(f"Reconnection attempt {attempt + 1}/{MAX_RECONNECT_ATTEMPTS}")
+            
+            # Close the current session if it exists
+            if bot.is_closed():
+                logger.info("Bot is already closed, starting fresh...")
+            else:
+                await bot.close()
+            
+            # Wait before attempting to reconnect
+            await asyncio.sleep(RECONNECT_DELAY)
+            
+            # Start a new session
+            token = os.getenv('DISCORD_TOKEN')
+            if not token:
+                logger.error("No Discord token found in environment variables!")
+                return
+                
+            await bot.start(token)
             logger.info("Successfully reconnected to Discord")
             return
+            
         except Exception as e:
             logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
-            if attempt < MAX_RETRIES - 1:
-                await asyncio.sleep(RETRY_DELAY)
+            if attempt < MAX_RECONNECT_ATTEMPTS - 1:
+                await asyncio.sleep(RECONNECT_DELAY * (attempt + 1))  # Exponential backoff
             else:
                 logger.error("Failed to reconnect after maximum attempts")
+                # Try to restart the entire bot
+                try:
+                    await restart_bot()
+                except Exception as restart_error:
+                    logger.error(f"Failed to restart bot: {restart_error}")
+
+async def restart_bot():
+    """Restart the entire bot process."""
+    logger.info("Attempting to restart the bot...")
+    try:
+        # Close the current session
+        if not bot.is_closed():
+            await bot.close()
+        
+        # Wait a moment before restarting
+        await asyncio.sleep(RECONNECT_DELAY)
+        
+        # Get the token
+        token = os.getenv('DISCORD_TOKEN')
+        if not token:
+            logger.error("No Discord token found in environment variables!")
+            return
+        
+        # Start a new session
+        await bot.start(token)
+        logger.info("Bot successfully restarted")
+        
+    except Exception as e:
+        logger.error(f"Failed to restart bot: {e}")
+        raise
 
 @bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
@@ -533,12 +583,17 @@ def main():
     # Run the Discord bot with retry logic
     while True:
         try:
+            # Start the bot
             bot.run(token)
             break
         except Exception as e:
             logger.error(f"Bot crashed: {e}")
             logger.info(f"Attempting to restart in {RETRY_DELAY} seconds...")
             time.sleep(RETRY_DELAY)
+            
+            # If we've hit a critical error, wait longer before retrying
+            if "Cannot write to closing transport" in str(e):
+                time.sleep(RETRY_DELAY * 2)
 
 if __name__ == "__main__":
     main()
