@@ -66,60 +66,73 @@ def get_tour_dates():
                 'Connection': 'keep-alive',
                 'Sec-Fetch-Dest': 'empty',
                 'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'cross-site'
+                'Sec-Fetch-Site': 'cross-site',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
             }
             
             try:
+                logger.info(f"Fetching Seated API from: {seated_url}")
                 seated_response = requests.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
                 logger.info(f"Seated API response status: {seated_response.status_code}")
+                logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
+                logger.info(f"Seated API response content: {seated_response.text[:1000]}")  # Log first 1000 chars
                 
-                seated_data = seated_response.json()
-                tour_dates = []
+                # Try to parse the response as JSON
+                try:
+                    seated_data = seated_response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse Seated API response as JSON: {e}")
+                    logger.error(f"Raw response content: {seated_response.text}")
+                    seated_data = None
                 
-                for event in seated_data.get('events', []):
-                    try:
-                        # Parse the date from the event data
-                        date_text = event.get('date', '')
-                        if not date_text:
-                            start_time = event.get('start_time')
-                            if start_time:
-                                try:
-                                    date = datetime.fromtimestamp(start_time)
-                                    date_text = date.strftime('%B %d, %Y')
-                                except:
-                                    date_text = "Date TBA"
+                if seated_data:
+                    tour_dates = []
+                    
+                    for event in seated_data.get('events', []):
+                        try:
+                            # Parse the date from the event data
+                            date_text = event.get('date', '')
+                            if not date_text:
+                                start_time = event.get('start_time')
+                                if start_time:
+                                    try:
+                                        date = datetime.fromtimestamp(start_time)
+                                        date_text = date.strftime('%B %d, %Y')
+                                    except:
+                                        date_text = "Date TBA"
+                            
+                            venue_text = event.get('venue', {}).get('name', 'Venue TBA')
+                            city = event.get('venue', {}).get('city', '')
+                            state = event.get('venue', {}).get('state', '')
+                            location_text = f"{city}, {state}" if city and state else "Location TBA"
+                            
+                            if date_text and venue_text and location_text:
+                                logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
+                                tour_dates.append({
+                                    'date': date_text,
+                                    'venue': venue_text,
+                                    'location': location_text
+                                })
+                        except Exception as e:
+                            logger.error(f"Error processing Seated event: {e}")
+                            continue
+                    
+                    if tour_dates:
+                        # Save to JSON file with timestamp
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f'tour_dates_{timestamp}.json'
                         
-                        venue_text = event.get('venue', {}).get('name', 'Venue TBA')
-                        city = event.get('venue', {}).get('city', '')
-                        state = event.get('venue', {}).get('state', '')
-                        location_text = f"{city}, {state}" if city and state else "Location TBA"
+                        # Use Railway's data directory if available, otherwise use current directory
+                        data_dir = os.getenv('RAILWAY_DATA_DIR', '.')
+                        filepath = os.path.join(data_dir, filename)
                         
-                        if date_text and venue_text and location_text:
-                            logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
-                            tour_dates.append({
-                                'date': date_text,
-                                'venue': venue_text,
-                                'location': location_text
-                            })
-                    except Exception as e:
-                        logger.error(f"Error processing Seated event: {e}")
-                        continue
-                
-                if tour_dates:
-                    # Save to JSON file with timestamp
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f'tour_dates_{timestamp}.json'
-                    
-                    # Use Railway's data directory if available, otherwise use current directory
-                    data_dir = os.getenv('RAILWAY_DATA_DIR', '.')
-                    filepath = os.path.join(data_dir, filename)
-                    
-                    with open(filepath, 'w') as f:
-                        json.dump(tour_dates, f, indent=4)
-                    logger.info(f"Tour dates saved to {filepath}")
-                    
-                    return tour_dates
+                        with open(filepath, 'w') as f:
+                            json.dump(tour_dates, f, indent=4)
+                        logger.info(f"Tour dates saved to {filepath}")
+                        
+                        return tour_dates
                 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching Seated data: {e}")
@@ -127,9 +140,6 @@ def get_tour_dates():
                     logger.error(f"Seated response status: {e.response.status_code}")
                     logger.error(f"Seated response headers: {e.response.headers}")
                     logger.error(f"Seated response content: {e.response.text}")
-            except json.JSONDecodeError as e:
-                logger.error(f"Error decoding Seated JSON: {e}")
-                logger.error(f"Raw response: {seated_response.text}")
             except Exception as e:
                 logger.error(f"Unexpected error with Seated API: {e}")
                 import traceback
@@ -141,6 +151,12 @@ def get_tour_dates():
         # Find all potential event containers
         event_containers = soup.find_all(['div', 'section'], class_=['seated-event-row', 'tour-date', 'event'])
         logger.info(f"Found {len(event_containers)} potential event containers")
+        
+        # Log all div classes for debugging
+        all_divs = soup.find_all('div', class_=True)
+        logger.info("All div classes found:")
+        for div in all_divs:
+            logger.info(f"Div class: {div.get('class')}")
         
         tour_dates = []
         for container in event_containers:
