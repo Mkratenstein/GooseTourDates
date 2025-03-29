@@ -156,10 +156,11 @@ def get_tour_dates():
 
 def get_formatted_tour_dates(month=None):
     """Get and format tour dates for Discord output."""
-    tour_dates = get_tour_dates()
+    # Always try to get from cache first
+    tour_dates = load_from_cache()
     
     if not tour_dates:
-        return ["No tour dates found. The page structure may have changed."]
+        return ["No tour dates found. Please try again later."]
     
     # Process dates to ensure consistent format
     processed_dates = []

@@ -6,9 +6,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-from data_processor import get_formatted_tour_dates
+from data_processor import get_formatted_tour_dates, get_tour_dates
 import aiohttp
 from aiohttp import ClientTimeout
+from concurrent.futures import ThreadPoolExecutor
 
 # Load environment variables
 load_dotenv()
@@ -46,12 +47,27 @@ connection_attempts = 0
 last_connection_time = 0
 is_reconnecting = False
 session = None
+executor = ThreadPoolExecutor(max_workers=1)  # Single worker for scraping
 
 # Add month validation
 VALID_MONTHS = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
+
+async def run_in_executor(func, *args):
+    """Run a function in the thread pool executor."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, func, *args)
+
+async def initial_scrape():
+    """Run initial scrape on bot startup."""
+    try:
+        logger.info("Running initial tour dates scrape...")
+        await run_in_executor(get_tour_dates)
+        logger.info("Initial scrape completed successfully")
+    except Exception as e:
+        logger.error(f"Error during initial scrape: {e}")
 
 async def create_session():
     """Create a new aiohttp session with proper timeout settings."""
@@ -277,6 +293,9 @@ async def on_ready():
         await bot.change_presence(activity=discord.Game(name="Goose Tour Dates"))
     except Exception as e:
         logger.warning(f"Failed to set bot activity: {e}")
+    
+    # Run initial scrape
+    await initial_scrape()
 
 @bot.event
 async def on_disconnect():
@@ -365,7 +384,7 @@ async def tour_dates(interaction: discord.Interaction, month: str = None):
         return
     
     try:
-        # Get the tour dates or available months
+        # Get the tour dates from cache
         messages = get_formatted_tour_dates(month)
         
         # Send the messages
