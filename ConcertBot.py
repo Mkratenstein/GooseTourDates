@@ -42,6 +42,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAY = 10
+WEBSOCKET_TIMEOUT = 30
 
 def get_chrome_version():
     """Get the installed Chrome version."""
@@ -466,23 +467,36 @@ async def on_disconnect():
             else:
                 await bot.close()
             
-            # Wait before attempting to reconnect
-            await asyncio.sleep(RECONNECT_DELAY)
+            # Wait before attempting to reconnect with exponential backoff
+            delay = RECONNECT_DELAY * (2 ** attempt)  # Exponential backoff
+            logger.info(f"Waiting {delay} seconds before reconnecting...")
+            await asyncio.sleep(delay)
             
             # Start a new session
             token = os.getenv('DISCORD_TOKEN')
             if not token:
                 logger.error("No Discord token found in environment variables!")
                 return
-                
-            await bot.start(token)
-            logger.info("Successfully reconnected to Discord")
-            return
             
+            # Set up websocket timeout
+            bot.http.connector._timeout = WEBSOCKET_TIMEOUT
+            
+            # Start the bot with a timeout
+            try:
+                async with asyncio.timeout(WEBSOCKET_TIMEOUT):
+                    await bot.start(token)
+                    logger.info("Successfully reconnected to Discord")
+                    return
+            except asyncio.TimeoutError:
+                logger.error("Connection attempt timed out")
+                continue
+                
         except Exception as e:
             logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
             if attempt < MAX_RECONNECT_ATTEMPTS - 1:
-                await asyncio.sleep(RECONNECT_DELAY * (attempt + 1))  # Exponential backoff
+                delay = RECONNECT_DELAY * (2 ** attempt)  # Exponential backoff
+                logger.info(f"Waiting {delay} seconds before next attempt...")
+                await asyncio.sleep(delay)
             else:
                 logger.error("Failed to reconnect after maximum attempts")
                 # Try to restart the entire bot
@@ -508,9 +522,17 @@ async def restart_bot():
             logger.error("No Discord token found in environment variables!")
             return
         
-        # Start a new session
-        await bot.start(token)
-        logger.info("Bot successfully restarted")
+        # Set up websocket timeout
+        bot.http.connector._timeout = WEBSOCKET_TIMEOUT
+        
+        # Start a new session with timeout
+        try:
+            async with asyncio.timeout(WEBSOCKET_TIMEOUT):
+                await bot.start(token)
+                logger.info("Bot successfully restarted")
+        except asyncio.TimeoutError:
+            logger.error("Bot restart timed out")
+            raise
         
     except Exception as e:
         logger.error(f"Failed to restart bot: {e}")
@@ -580,6 +602,9 @@ def main():
         logger.error("No Discord token found in environment variables!")
         return
     
+    # Set up websocket timeout
+    bot.http.connector._timeout = WEBSOCKET_TIMEOUT
+    
     # Run the Discord bot with retry logic
     while True:
         try:
@@ -593,6 +618,10 @@ def main():
             
             # If we've hit a critical error, wait longer before retrying
             if "Cannot write to closing transport" in str(e):
+                time.sleep(RETRY_DELAY * 2)
+            elif "Connection reset" in str(e):
+                time.sleep(RETRY_DELAY * 3)
+            elif "Timeout" in str(e):
                 time.sleep(RETRY_DELAY * 2)
 
 if __name__ == "__main__":
