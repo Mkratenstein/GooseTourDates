@@ -51,8 +51,8 @@ def get_tour_dates():
             artist_id = seated_widget.get('data-artist-id')
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
-            # Try to fetch from Seated API
-            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
+            # Try to fetch from Seated widget's JavaScript API
+            seated_url = f"https://widget.seated.com/api/v1/widgets/{artist_id}/events"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'application/json',
@@ -64,32 +64,18 @@ def get_tour_dates():
                 'Sec-Fetch-Mode': 'cors',
                 'Sec-Fetch-Site': 'cross-site',
                 'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Pragma': 'no-cache',
+                'X-Requested-With': 'XMLHttpRequest'
             }
             
             try:
-                logger.info(f"Fetching Seated API from: {seated_url}")
+                logger.info(f"Fetching Seated widget API from: {seated_url}")
                 seated_response = requests.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
                 
                 # Log response details for debugging
                 logger.info(f"Seated API response status: {seated_response.status_code}")
                 logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
-                
-                # Check if we got HTML instead of JSON
-                if 'text/html' in seated_response.headers.get('Content-Type', ''):
-                    logger.info("Received HTML response from Seated API, trying to extract artist ID")
-                    seated_soup = BeautifulSoup(seated_response.text, 'html.parser')
-                    seated_div = seated_soup.find('div', {'data-artist-id': True})
-                    if seated_div:
-                        new_artist_id = seated_div.get('data-artist-id')
-                        logger.info(f"Found new artist ID in response: {new_artist_id}")
-                        
-                        # Try again with the new artist ID
-                        seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events"
-                        logger.info(f"Fetching Seated API with new artist ID: {seated_url}")
-                        seated_response = requests.get(seated_url, headers=seated_headers)
-                        seated_response.raise_for_status()
                 
                 # Try to parse the response as JSON
                 try:
