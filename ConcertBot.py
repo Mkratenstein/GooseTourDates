@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import json
 import asyncio
 import time
+import random
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +29,8 @@ TOUR_DATES_FILE = 'previous_tour_dates.json'
 
 # Rate limit handling
 MAX_RETRIES = 5
-INITIAL_RETRY_DELAY = 1  # seconds
+INITIAL_RETRY_DELAY = 5  # Increased initial delay
+MAX_RETRY_DELAY = 60  # Maximum delay between retries
 
 async def retry_with_backoff(func, *args, **kwargs):
     retry_delay = INITIAL_RETRY_DELAY
@@ -38,8 +40,11 @@ async def retry_with_backoff(func, *args, **kwargs):
         except discord.HTTPException as e:
             if e.code == 429:  # Rate limit error
                 if attempt < MAX_RETRIES - 1:
-                    print(f"Rate limited. Retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
+                    # Add jitter to prevent thundering herd
+                    jitter = random.uniform(0, 1)
+                    actual_delay = min(retry_delay + jitter, MAX_RETRY_DELAY)
+                    print(f"Rate limited. Retrying in {actual_delay:.2f} seconds...")
+                    await asyncio.sleep(actual_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
                     raise
@@ -236,14 +241,23 @@ if __name__ == "__main__":
     if not ANNOUNCEMENTS_CHANNEL_ID:
         raise ValueError("ANNOUNCEMENTS_CHANNEL_ID environment variable is not set")
     
-    # Add retry logic for bot startup
+    # Add retry logic for bot startup with jitter
     for attempt in range(MAX_RETRIES):
         try:
+            # Add initial delay with jitter before first attempt
+            if attempt == 0:
+                initial_delay = random.uniform(3, 7)
+                print(f"Initial startup delay: {initial_delay:.2f} seconds")
+                time.sleep(initial_delay)
+            
+            print(f"Attempting to start bot (attempt {attempt + 1}/{MAX_RETRIES})")
             bot.run(DISCORD_TOKEN)
             break
         except discord.HTTPException as e:
             if e.code == 429 and attempt < MAX_RETRIES - 1:
-                print(f"Rate limited on startup. Retrying in {INITIAL_RETRY_DELAY * (2 ** attempt)} seconds...")
-                time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(0, 2), MAX_RETRY_DELAY)
+                print(f"Rate limited on startup. Retrying in {delay:.2f} seconds...")
+                time.sleep(delay)
             else:
+                print(f"Failed to start bot after {MAX_RETRIES} attempts")
                 raise
