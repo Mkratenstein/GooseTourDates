@@ -14,12 +14,12 @@ import subprocess
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(message)s',  # Remove timestamp and level from output
     force=True  # Force reconfiguration of the root logger
 )
 logger = logging.getLogger(__name__)
 
-# Add a file handler to ensure synchronized output
+# Add a file handler for debugging
 file_handler = logging.FileHandler('goose_tour_dates.log')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(file_handler)
