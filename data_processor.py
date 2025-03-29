@@ -102,7 +102,30 @@ def format_event_output(event):
     # Join with single newlines for better spacing
     return "\n".join(output_lines)
 
-def get_formatted_tour_dates():
+def get_month_from_date(date_str):
+    """Extract month from a date string."""
+    try:
+        if " to " in date_str:
+            date_str = date_str.split(" to ")[0]  # Use start date for date ranges
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.strftime("%B")  # Returns full month name
+    except Exception as e:
+        logger.warning(f"Could not extract month from date '{date_str}': {e}")
+        return None
+
+def filter_dates_by_month(tour_dates, target_month):
+    """Filter tour dates to only include dates from the specified month."""
+    if not target_month:
+        return tour_dates
+        
+    filtered_dates = []
+    for event in tour_dates:
+        event_month = get_month_from_date(event['date'])
+        if event_month and event_month.lower() == target_month.lower():
+            filtered_dates.append(event)
+    return filtered_dates
+
+def get_formatted_tour_dates(month):
     """Get and format tour dates for Discord output."""
     tour_dates = scrape_goose_tour_dates()
     
@@ -118,11 +141,17 @@ def get_formatted_tour_dates():
     # Sort dates chronologically using the first date for date ranges
     processed_dates.sort(key=lambda x: x['date'].split(" to ")[0])
     
+    # Filter by month
+    processed_dates = filter_dates_by_month(processed_dates, month)
+    if not processed_dates:
+        return [f"No tour dates found for {month}."]
+    
     # Create messages array
     messages = []
     
-    # Add header message with total count
-    header_message = f"**Goose Tour Dates**\nFound {len(processed_dates)} upcoming shows:"
+    # Add header message with total count and month
+    header_message = f"**Goose Tour Dates**\n"
+    header_message += f"Found {len(processed_dates)} upcoming shows in {month}:"
     messages.append(header_message)
     
     # Format each event as a separate message
