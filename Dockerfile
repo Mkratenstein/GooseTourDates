@@ -35,9 +35,10 @@ COPY ConcertBot.py .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV RAILWAY_DATA_DIR=/data
+ENV PYTHONIOENCODING=utf-8
 
 # Create data directory
 RUN mkdir -p /data
 
-# Run the script
-CMD ["python", "ConcertBot.py"] 
+# Run the script with output redirection
+CMD ["python", "-u", "ConcertBot.py"] 
