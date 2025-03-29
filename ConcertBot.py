@@ -21,6 +21,11 @@ def get_tour_dates():
     url = "https://www.goosetheband.com/tour"
     try:
         logger.info("Fetching tour dates from website...")
+        
+        # Create a session to maintain cookies
+        session = requests.Session()
+        
+        # First visit the main page to get any necessary cookies
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -38,7 +43,7 @@ def get_tour_dates():
             'Sec-Fetch-User': '?1'
         }
         
-        response = requests.get(url, headers=headers)
+        response = session.get(url, headers=headers)
         response.raise_for_status()
         logger.info(f"Response status code: {response.status_code}")
         
@@ -52,7 +57,7 @@ def get_tour_dates():
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
             # Try to fetch from Seated widget's JavaScript API
-            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events.json"
+            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
@@ -68,12 +73,13 @@ def get_tour_dates():
                 'X-Requested-With': 'XMLHttpRequest',
                 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
                 'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"'
+                'sec-ch-ua-platform': '"Windows"',
+                'Cookie': 'seated_session=development'
             }
             
             try:
                 logger.info(f"Fetching Seated widget API from: {seated_url}")
-                seated_response = requests.get(seated_url, headers=seated_headers)
+                seated_response = session.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
                 
                 # Log response details for debugging
@@ -96,9 +102,9 @@ def get_tour_dates():
                             logger.info(f"Found new artist ID in response: {new_artist_id}")
                             
                             # Try again with the new artist ID
-                            seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events.json"
+                            seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events"
                             logger.info(f"Fetching Seated API with new artist ID: {seated_url}")
-                            seated_response = requests.get(seated_url, headers=seated_headers)
+                            seated_response = session.get(seated_url, headers=seated_headers)
                             seated_response.raise_for_status()
                             
                             try:
