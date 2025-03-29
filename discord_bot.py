@@ -78,7 +78,7 @@ async def close_session(session):
     if not session.closed:
         await session.close()
 
-async def send_message_with_retry(interaction: discord.Interaction, message: str, max_retries: int = 3) -> bool:
+async def send_message_with_retry(interaction: discord.Interaction, message: str, ephemeral: bool = False, max_retries: int = 3) -> bool:
     """Send a message with retry logic."""
     for attempt in range(max_retries):
         try:
@@ -87,7 +87,7 @@ async def send_message_with_retry(interaction: discord.Interaction, message: str
                 await asyncio.sleep(MESSAGE_RETRY_DELAY)
                 continue
                 
-            await interaction.followup.send(message, ephemeral=True)
+            await interaction.followup.send(message, ephemeral=ephemeral)
             return True
         except discord.HTTPException as e:
             if e.code == 50035:  # Message too long
@@ -95,7 +95,7 @@ async def send_message_with_retry(interaction: discord.Interaction, message: str
                 # Split message into lines and send each line
                 lines = message.split("\n")
                 for line in lines:
-                    if not await send_message_with_retry(interaction, line):
+                    if not await send_message_with_retry(interaction, line, ephemeral):
                         return False
                 return True
             elif e.code == 10008:  # Unknown Channel
@@ -129,11 +129,11 @@ async def send_message_with_retry(interaction: discord.Interaction, message: str
             return False
     return False
 
-async def send_monthly_messages(interaction: discord.Interaction, messages: list):
+async def send_monthly_messages(interaction: discord.Interaction, messages: list, ephemeral: bool = False):
     """Send multiple messages, one for each event."""
     try:
         # Send the header message first
-        if not await send_message_with_retry(interaction, messages[0]):
+        if not await send_message_with_retry(interaction, messages[0], ephemeral):
             logger.error("Failed to send header message")
             return
         
@@ -150,7 +150,7 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
             # Add a small delay between messages to avoid rate limits
             await asyncio.sleep(MESSAGE_SEND_DELAY)
             
-            if not await send_message_with_retry(interaction, message):
+            if not await send_message_with_retry(interaction, message, ephemeral):
                 logger.error("Failed to send event message")
                 return
                 
@@ -391,8 +391,8 @@ async def tour_dates(interaction: discord.Interaction, month: str = None):
         # Get the tour dates from cache
         messages = get_formatted_tour_dates(month)
         
-        # Send the messages
-        await send_monthly_messages(interaction, messages)
+        # Send the messages with the appropriate ephemeral setting
+        await send_monthly_messages(interaction, messages, ephemeral=(month is None))
             
     except Exception as e:
         logger.error(f"Error in tour_dates command: {e}")
