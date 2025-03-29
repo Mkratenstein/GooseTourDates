@@ -7,6 +7,8 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 from data_processor import get_formatted_tour_dates
+import aiohttp
+from aiohttp import ClientTimeout
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +37,20 @@ RETRY_DELAY = 5
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAY = 10
 WEBSOCKET_TIMEOUT = 30
+CONNECTION_TIMEOUT = ClientTimeout(total=30, connect=10)
+
+# Add connection state tracking
+connection_attempts = 0
+last_connection_time = 0
+
+async def create_session():
+    """Create a new aiohttp session with proper timeout settings."""
+    return aiohttp.ClientSession(timeout=CONNECTION_TIMEOUT)
+
+async def close_session(session):
+    """Safely close an aiohttp session."""
+    if not session.closed:
+        await session.close()
 
 async def send_monthly_messages(interaction: discord.Interaction, messages: list):
     """Send multiple messages, one for each month."""
@@ -77,6 +93,10 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
 @bot.event
 async def on_ready():
     """Called when the bot is ready and connected to Discord."""
+    global connection_attempts, last_connection_time
+    connection_attempts = 0
+    last_connection_time = time.time()
+    
     logger.info(f'Bot is ready! Logged in as {bot.user.name}')
     
     # Configure HTTP session timeout
@@ -96,10 +116,12 @@ async def on_ready():
 @bot.event
 async def on_disconnect():
     """Called when the bot disconnects from Discord."""
+    global connection_attempts
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
     
     for attempt in range(MAX_RECONNECT_ATTEMPTS):
         try:
+            connection_attempts += 1
             logger.info(f"Reconnection attempt {attempt + 1}/{MAX_RECONNECT_ATTEMPTS}")
             
             # Close the current session if it exists
@@ -108,9 +130,12 @@ async def on_disconnect():
             else:
                 await bot.close()
             
-            # Wait before attempting to reconnect with exponential backoff
-            delay = RECONNECT_DELAY * (2 ** attempt)  # Exponential backoff
-            logger.info(f"Waiting {delay} seconds before reconnecting...")
+            # Calculate delay with exponential backoff and jitter
+            base_delay = RECONNECT_DELAY * (2 ** attempt)
+            jitter = (time.time() % 1) * 2  # Random jitter between 0 and 2 seconds
+            delay = base_delay + jitter
+            
+            logger.info(f"Waiting {delay:.1f} seconds before reconnecting...")
             await asyncio.sleep(delay)
             
             # Start a new session
@@ -119,7 +144,7 @@ async def on_disconnect():
                 logger.error("No Discord token found in environment variables!")
                 return
             
-            # Start the bot with a timeout
+            # Create a new session with proper timeout
             try:
                 async with asyncio.timeout(WEBSOCKET_TIMEOUT):
                     await bot.start(token)
@@ -128,11 +153,17 @@ async def on_disconnect():
             except asyncio.TimeoutError:
                 logger.error("Connection attempt timed out")
                 continue
+            except aiohttp.ClientConnectionResetError:
+                logger.error("Connection reset by peer")
+                continue
+            except aiohttp.ClientError as e:
+                logger.error(f"Connection error: {e}")
+                continue
                 
         except Exception as e:
             logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
             if attempt < MAX_RECONNECT_ATTEMPTS - 1:
-                delay = RECONNECT_DELAY * (2 ** attempt)  # Exponential backoff
+                delay = RECONNECT_DELAY * (2 ** attempt)
                 logger.info(f"Waiting {delay} seconds before next attempt...")
                 await asyncio.sleep(delay)
             else:
@@ -168,10 +199,22 @@ async def restart_bot():
         except asyncio.TimeoutError:
             logger.error("Bot restart timed out")
             raise
+        except aiohttp.ClientError as e:
+            logger.error(f"Bot restart connection error: {e}")
+            raise
         
     except Exception as e:
         logger.error(f"Failed to restart bot: {e}")
         raise
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Global error handler for the bot."""
+    logger.error(f"Error in {event}: {args} {kwargs}")
+    if event == 'on_message':
+        logger.error(f"Message content: {args[0].content if args else 'No message content'}")
+    elif event == 'on_command_error':
+        logger.error(f"Command error: {args[0] if args else 'No error details'}")
 
 @bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
