@@ -64,17 +64,17 @@ def format_event_output(event):
     """Format a single event's output as a single string."""
     output_lines = []
     
-    # Format date with bold and emoji
-    output_lines.append(f"🎵 **{format_date_for_display(event['date'])}**")
+    # Format date with bold
+    output_lines.append(f"**{format_date_for_display(event['date'])}**")
     
     # Add venue and location on the same line
-    output_lines.append(f"📍 {event['venue']} | {event['location']}")
+    output_lines.append(f"{event['venue']} | {event['location']}")
     
     # Add ticket links if present
     if event['ticketLinks']:
         # Format ticket links more compactly
         ticket_lines = []
-        current_line = "🎫 "
+        current_line = "Tickets: "
         for link in event['ticketLinks'].split("; "):
             if len(current_line + link) > 80:  # Reasonable line length
                 ticket_lines.append(current_line)
@@ -88,7 +88,7 @@ def format_event_output(event):
     if event['additionalInfo']:
         # Format additional info more compactly
         info_lines = []
-        current_line = "ℹ️ "
+        current_line = "Info: "
         words = event['additionalInfo'].split()
         for word in words:
             if len(current_line + " " + word) > 80:  # Reasonable line length
@@ -139,16 +139,16 @@ def get_formatted_tour_dates():
     # Create separate messages for each month
     messages = []
     
-    # Add header message with total count and emoji
-    header_message = f"🎵 **Goose Tour Dates** 🎵\nFound {len(processed_dates)} upcoming shows:"
+    # Add header message with total count
+    header_message = f"**Goose Tour Dates**\nFound {len(processed_dates)} upcoming shows:"
     messages.append(header_message)
     
     # Create a message for each month
     for month in sorted(events_by_month.keys()):
-        # Start with month header using bold and emoji
+        # Start with month header using bold
         month_message = [
-            f"\n📅 **{month}**",
-            "─" * 40  # Use a simple line separator instead of emojis
+            f"\n**{month}**",
+            "───"  # Use three dashes as separator
         ]
         
         # Sort events within each month by date
@@ -159,7 +159,7 @@ def get_formatted_tour_dates():
         for date in month_events:
             try:
                 month_message.append(format_event_output(date))
-                month_message.append("─" * 40)  # Add separator between events
+                month_message.append("───")  # Add separator between events
             except Exception as e:
                 logger.error(f"Error formatting event: {e}")
                 continue

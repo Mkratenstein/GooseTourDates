@@ -60,20 +60,39 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         
         # Send each month's message
         for message in messages[1:]:
-            # Double-check the length before sending
-            if len(message) > 1900:
-                # If a month's message is too long, split it by events
-                events = message.split("\n\n" + "🎸" * 20)
-                current_chunk = events[0]
+            # Split message into chunks if needed
+            if len(message) > 1900:  # Leave some buffer for formatting
+                # Split by month header
+                parts = message.split("\n📅")
+                current_chunk = parts[0]
                 
-                for event in events[1:]:
-                    event_chunk = "\n\n" + "🎸" * 20 + event
-                    if len(current_chunk + event_chunk) > 1900:
-                        await interaction.followup.send(current_chunk, ephemeral=True)
-                        current_chunk = "🎸" * 20 + event
+                for part in parts[1:]:
+                    # Add back the month header
+                    part = "📅" + part
+                    
+                    # If this part would exceed the limit, split it by events
+                    if len(current_chunk + "\n" + part) > 1900:
+                        # Split by event separator
+                        events = part.split("─" * 40)
+                        event_chunk = events[0]
+                        
+                        for event in events[1:]:
+                            event = "─" * 40 + event
+                            if len(current_chunk + "\n" + event_chunk + "\n" + event) > 1900:
+                                # Send current chunk and start new one
+                                await interaction.followup.send(current_chunk, ephemeral=True)
+                                current_chunk = event_chunk + "\n" + event
+                            else:
+                                event_chunk += "\n" + event
+                        
+                        # Send the last event chunk
+                        if event_chunk:
+                            await interaction.followup.send(event_chunk, ephemeral=True)
+                            current_chunk = ""
                     else:
-                        current_chunk += event_chunk
+                        current_chunk += "\n" + part
                 
+                # Send any remaining content
                 if current_chunk:
                     await interaction.followup.send(current_chunk, ephemeral=True)
             else:
