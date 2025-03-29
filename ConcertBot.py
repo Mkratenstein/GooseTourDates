@@ -75,7 +75,21 @@ def get_tour_dates():
                 # Log response details for debugging
                 logger.info(f"Seated API response status: {seated_response.status_code}")
                 logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
-                logger.info(f"Seated API response content: {seated_response.text[:1000]}")  # Log first 1000 chars
+                
+                # Check if we got HTML instead of JSON
+                if 'text/html' in seated_response.headers.get('Content-Type', ''):
+                    logger.info("Received HTML response from Seated API, trying to extract artist ID")
+                    seated_soup = BeautifulSoup(seated_response.text, 'html.parser')
+                    seated_div = seated_soup.find('div', {'data-artist-id': True})
+                    if seated_div:
+                        new_artist_id = seated_div.get('data-artist-id')
+                        logger.info(f"Found new artist ID in response: {new_artist_id}")
+                        
+                        # Try again with the new artist ID
+                        seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events"
+                        logger.info(f"Fetching Seated API with new artist ID: {seated_url}")
+                        seated_response = requests.get(seated_url, headers=seated_headers)
+                        seated_response.raise_for_status()
                 
                 # Try to parse the response as JSON
                 try:
