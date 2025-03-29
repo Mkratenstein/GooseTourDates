@@ -4,12 +4,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 from datetime import datetime
 import os
 import time
 import logging
+import subprocess
 
 # Configure logging
 logging.basicConfig(
@@ -17,6 +17,24 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def get_chrome_version():
+    """Get the installed Chrome version."""
+    try:
+        # Try different commands to get Chrome version
+        for cmd in ['google-chrome --version', 'google-chrome-stable --version']:
+            try:
+                result = subprocess.run(cmd.split(), capture_output=True, text=True)
+                if result.returncode == 0:
+                    version = result.stdout.strip().split()[-1]
+                    logger.info(f"Found Chrome version: {version}")
+                    return version
+            except:
+                continue
+        return None
+    except Exception as e:
+        logger.error(f"Error getting Chrome version: {e}")
+        return None
 
 def setup_driver():
     """Set up and return a Chrome WebDriver instance."""
@@ -29,10 +47,28 @@ def setup_driver():
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--disable-infobars')
         chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        # Use webdriver_manager to handle driver installation
-        service = Service(ChromeDriverManager().install())
+        # Get Chrome version
+        chrome_version = get_chrome_version()
+        if not chrome_version:
+            raise Exception("Could not determine Chrome version")
+        
+        # Use the system Chrome binary
+        chrome_options.binary_location = '/usr/bin/google-chrome'
+        
+        # Create service with specific ChromeDriver path
+        service = Service('/usr/bin/chromedriver')
+        
+        # Create driver
         driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # Set window size
+        driver.set_window_size(1920, 1080)
+        
         return driver
     except Exception as e:
         logger.error(f"Error setting up Chrome driver: {e}")
