@@ -193,8 +193,8 @@ def get_tour_dates():
         soup = BeautifulSoup(response.text, 'html.parser')
         print("Successfully parsed HTML")
         
-        # Remove SVG elements and scripts as they're not relevant for tour dates
-        for element in soup.find_all(['svg', 'script', 'style']):
+        # Remove SVG elements, scripts, and marquee elements as they're not relevant for tour dates
+        for element in soup.find_all(['svg', 'script', 'style', 'div', 'h1'], class_=['Marquee-item', 'Marquee-track']):
             element.decompose()
         
         tour_dates = []
@@ -207,96 +207,134 @@ def get_tour_dates():
         
         print("Main content classes:", main_content.get('class', []) if main_content else "No classes found")
         
-        # Try to find tour dates in various ways
-        potential_containers = main_content.find_all(['div', 'section', 'article'], class_=[
-            'tour-dates', 'tour', 'events', 'tour-events', 'tour-schedule',
-            'tour-list', 'event-list', 'tour-dates-container', 'tour-schedule-container',
-            'sqs-block', 'sqs-block-content'
-        ])
+        # Look for the Seated widget
+        seated_widget = soup.find('div', id='seated-55fdf2c0')
+        if seated_widget:
+            print("Found Seated widget")
+            # The Seated widget loads tour dates dynamically via JavaScript
+            # We'll need to make a separate request to their API
+            seated_url = f"https://widget.seated.com/api/v1/artists/{seated_widget.get('data-artist-id')}/events"
+            try:
+                seated_response = requests.get(seated_url, headers=headers)
+                seated_response.raise_for_status()
+                seated_data = seated_response.json()
+                
+                for event in seated_data.get('events', []):
+                    try:
+                        date_text = event.get('date', '')
+                        venue_text = event.get('venue', {}).get('name', 'Venue TBA')
+                        location_text = f"{event.get('venue', {}).get('city', '')}, {event.get('venue', {}).get('state', '')}"
+                        
+                        if date_text and venue_text and location_text:
+                            print(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
+                            tour_dates.append({
+                                'date': date_text,
+                                'venue': venue_text,
+                                'location': location_text
+                            })
+                    except Exception as e:
+                        print(f"Error processing Seated event: {e}")
+                        continue
+            except Exception as e:
+                print(f"Error fetching Seated data: {e}")
         
-        if not potential_containers:
-            print("Could not find tour dates container, trying alternative methods...")
-            # Try to find any elements that look like they might contain tour dates
-            potential_containers = main_content.find_all(['div', 'section', 'article'], 
-                class_=lambda x: x and any(term in x.lower() for term in ['tour', 'event', 'date', 'schedule', 'block']))
-        
-        print(f"Found {len(potential_containers)} potential containers")
-        
-        # Print all block types for debugging
-        blocks = main_content.find_all(class_='sqs-block')
-        print("Found blocks:", [block.get('data-block-type', 'unknown') for block in blocks])
-        
-        for container in potential_containers:
-            # Look for individual tour date entries
-            events = container.find_all(['div', 'li', 'article', 'tr', 'p'], class_=[
-                'tour-date', 'event', 'tour-event', 'event-item',
-                'tour-date-item', 'event-entry', 'tour-entry', 'tour-date-row',
-                'sqs-block-content'
+        # If we didn't find any dates from Seated, try the regular HTML parsing
+        if not tour_dates:
+            # Try to find tour dates in various ways
+            potential_containers = main_content.find_all(['div', 'section', 'article'], class_=[
+                'tour-dates', 'tour', 'events', 'tour-events', 'tour-schedule',
+                'tour-list', 'event-list', 'tour-dates-container', 'tour-schedule-container',
+                'sqs-block', 'sqs-block-content'
             ])
             
-            if not events:
-                # Try to find events by looking for date-like text
-                events = container.find_all(['div', 'li', 'article', 'tr', 'p'], 
-                    text=lambda x: x and any(term in x.lower() for term in ['2024', '2025', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']))
+            if not potential_containers:
+                print("Could not find tour dates container, trying alternative methods...")
+                # Try to find any elements that look like they might contain tour dates
+                potential_containers = main_content.find_all(['div', 'section', 'article'], 
+                    class_=lambda x: x and any(term in x.lower() for term in ['tour', 'event', 'date', 'schedule', 'block']))
             
-            print(f"Found {len(events)} potential events in container")
+            print(f"Found {len(potential_containers)} potential containers")
             
-            for event in events:
-                try:
-                    # Print event HTML for debugging
-                    print("Event HTML:", event.prettify())
-                    
-                    # Try to find the date
-                    date_elem = (
-                        event.find(['div', 'span', 'td', 'p'], class_=['date', 'event-date', 'tour-date-date']) or
-                        event.find('time') or
-                        event.find(text=lambda x: x and any(term in x.lower() for term in ['2024', '2025', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']))
-                    )
-                    
-                    # Try to find the venue
-                    venue_elem = (
-                        event.find(['div', 'span', 'td', 'p'], class_=['venue', 'event-venue', 'tour-date-venue']) or
-                        event.find(text=lambda x: x and any(term in x.lower() for term in ['theater', 'theatre', 'arena', 'hall', 'center', 'centre', 'club', 'venue']))
-                    )
-                    
-                    # Try to find the location
-                    location_elem = (
-                        event.find(['div', 'span', 'td', 'p'], class_=['location', 'event-location', 'tour-date-location']) or
-                        event.find(text=lambda x: x and any(term in x.lower() for term in ['ny', 'ca', 'tx', 'fl', 'il', 'co', 'ma', 'pa', 'ga', 'tn', 'va', 'nc', 'sc', 'md', 'dc']))
-                    )
-                    
-                    # If we can't find elements by class, try to find them by text structure
-                    if not all([date_elem, venue_elem, location_elem]):
-                        text_content = event.get_text(separator='\n').strip()
-                        lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+            # Print all block types for debugging
+            blocks = main_content.find_all(class_='sqs-block')
+            print("Found blocks:", [block.get('data-block-type', 'unknown') for block in blocks])
+            
+            for container in potential_containers:
+                # Look for individual tour date entries
+                events = container.find_all(['div', 'li', 'article', 'tr', 'p'], class_=[
+                    'tour-date', 'event', 'tour-event', 'event-item',
+                    'tour-date-item', 'event-entry', 'tour-entry', 'tour-date-row',
+                    'sqs-block-content'
+                ])
+                
+                if not events:
+                    # Try to find events by looking for date-like text
+                    events = container.find_all(['div', 'li', 'article', 'tr', 'p'], 
+                        string=lambda x: x and any(term in x.lower() for term in ['2024', '2025', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']))
+                
+                print(f"Found {len(events)} potential events in container")
+                
+                for event in events:
+                    try:
+                        # Print event HTML for debugging
+                        print("Event HTML:", event.prettify())
                         
-                        if len(lines) >= 3:
-                            date_text = lines[0]
-                            venue_text = lines[1]
-                            location_text = lines[2]
+                        # Try to find the date
+                        date_elem = (
+                            event.find(['div', 'span', 'td', 'p'], class_=['date', 'event-date', 'tour-date-date']) or
+                            event.find('time') or
+                            event.find(string=lambda x: x and any(term in x.lower() for term in ['2024', '2025', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']))
+                        )
+                        
+                        # Try to find the venue
+                        venue_elem = (
+                            event.find(['div', 'span', 'td', 'p'], class_=['venue', 'event-venue', 'tour-date-venue']) or
+                            event.find(string=lambda x: x and any(term in x.lower() for term in ['theater', 'theatre', 'arena', 'hall', 'center', 'centre', 'club', 'venue']))
+                        )
+                        
+                        # Try to find the location
+                        location_elem = (
+                            event.find(['div', 'span', 'td', 'p'], class_=['location', 'event-location', 'tour-date-location']) or
+                            event.find(string=lambda x: x and any(term in x.lower() for term in ['ny', 'ca', 'tx', 'fl', 'il', 'co', 'ma', 'pa', 'ga', 'tn', 'va', 'nc', 'sc', 'md', 'dc']))
+                        )
+                        
+                        # If we can't find elements by class, try to find them by text structure
+                        if not all([date_elem, venue_elem, location_elem]):
+                            text_content = event.get_text(separator='\n').strip()
+                            lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+                            
+                            if len(lines) >= 3:
+                                date_text = lines[0]
+                                venue_text = lines[1]
+                                location_text = lines[2]
+                            else:
+                                print("Could not find required information in event text")
+                                continue
                         else:
-                            print("Could not find required information in event text")
+                            date_text = date_elem.text.strip() if date_elem else "Date TBA"
+                            venue_text = venue_elem.text.strip() if venue_elem else "Venue TBA"
+                            location_text = location_elem.text.strip() if location_elem else "Location TBA"
+                        
+                        # Clean up the text
+                        date_text = ' '.join(date_text.split())
+                        venue_text = ' '.join(venue_text.split())
+                        location_text = ' '.join(location_text.split())
+                        
+                        # Skip if this looks like a marquee or header text
+                        if any(term in date_text.lower() for term in ['on tour', 'goose', 'tour dates']):
+                            print("Skipping marquee/header text")
                             continue
-                    else:
-                        date_text = date_elem.text.strip() if date_elem else "Date TBA"
-                        venue_text = venue_elem.text.strip() if venue_elem else "Venue TBA"
-                        location_text = location_elem.text.strip() if location_elem else "Location TBA"
-                    
-                    # Clean up the text
-                    date_text = ' '.join(date_text.split())
-                    venue_text = ' '.join(venue_text.split())
-                    location_text = ' '.join(location_text.split())
-                    
-                    print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
-                    
-                    tour_dates.append({
-                        'date': date_text,
-                        'venue': venue_text,
-                        'location': location_text
-                    })
-                except Exception as e:
-                    print(f"Error processing event: {e}")
-                    continue
+                        
+                        print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
+                        
+                        tour_dates.append({
+                            'date': date_text,
+                            'venue': venue_text,
+                            'location': location_text
+                        })
+                    except Exception as e:
+                        print(f"Error processing event: {e}")
+                        continue
         
         if not tour_dates:
             print("No tour dates found in the parsed HTML")
