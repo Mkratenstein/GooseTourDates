@@ -52,10 +52,10 @@ def get_tour_dates():
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
             # Try to fetch from Seated widget's JavaScript API
-            seated_url = f"https://widget.seated.com/api/v1/widgets/{artist_id}/events"
+            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events.json"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/json',
+                'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Origin': 'https://www.goosetheband.com',
                 'Referer': 'https://www.goosetheband.com/tour',
@@ -65,7 +65,10 @@ def get_tour_dates():
                 'Sec-Fetch-Site': 'cross-site',
                 'Cache-Control': 'no-cache',
                 'Pragma': 'no-cache',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
             }
             
             try:
@@ -83,7 +86,29 @@ def get_tour_dates():
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse Seated API response as JSON: {e}")
                     logger.error(f"Raw response content: {seated_response.text}")
-                    seated_data = None
+                    
+                    # If we got HTML, try to extract the correct artist ID
+                    if '<!doctype html>' in seated_response.text:
+                        seated_soup = BeautifulSoup(seated_response.text, 'html.parser')
+                        seated_div = seated_soup.find('div', {'data-artist-id': True})
+                        if seated_div:
+                            new_artist_id = seated_div.get('data-artist-id')
+                            logger.info(f"Found new artist ID in response: {new_artist_id}")
+                            
+                            # Try again with the new artist ID
+                            seated_url = f"https://widget.seated.com/api/v1/artists/{new_artist_id}/events.json"
+                            logger.info(f"Fetching Seated API with new artist ID: {seated_url}")
+                            seated_response = requests.get(seated_url, headers=seated_headers)
+                            seated_response.raise_for_status()
+                            
+                            try:
+                                seated_data = seated_response.json()
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse Seated API response as JSON: {e}")
+                                logger.error(f"Raw response content: {seated_response.text}")
+                                seated_data = None
+                    else:
+                        seated_data = None
                 
                 if seated_data and 'events' in seated_data:
                     tour_dates = []
