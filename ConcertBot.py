@@ -1,12 +1,9 @@
-import requests
-from bs4 import BeautifulSoup
-import json
+from playwright.sync_api import sync_playwright
+import pandas as pd
 from datetime import datetime
 import os
 import time
 import logging
-from dotenv import load_dotenv
-import re
 
 # Configure logging
 logging.basicConfig(
@@ -15,381 +12,95 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
-def get_tour_dates():
-    url = "https://www.goosetheband.com/tour"
-    try:
-        logger.info("Fetching tour dates from website...")
+def scrape_goose_tour_dates():
+    with sync_playwright() as p:
+        # Launch browser
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
         
-        # Create a session to maintain cookies
-        session = requests.Session()
-        
-        # First visit the main page to get any necessary cookies
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Referer': 'https://www.goosetheband.com/',
-            'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
-            'sec-ch-ua-mobile': '?0',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1'
-        }
-        
-        response = session.get(url, headers=headers)
-        response.raise_for_status()
-        logger.info(f"Response status code: {response.status_code}")
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        logger.info("Successfully parsed HTML")
-        
-        # First try to find the Seated widget
-        seated_widget = soup.find('div', {'data-artist-id': True})
-        if seated_widget:
-            artist_id = seated_widget.get('data-artist-id')
-            logger.info(f"Found Seated widget with artist ID: {artist_id}")
+        try:
+            # Navigate to tour page
+            logger.info("Navigating to Goose tour page...")
+            page.goto("https://www.goosetheband.com/tour")
             
-            # Extract widget configuration
-            widget_config = {}
-            for attr in seated_widget.attrs:
-                if attr.startswith('data-'):
-                    widget_config[attr] = seated_widget.get(attr)
-            logger.info(f"Widget configuration: {widget_config}")
+            # Wait for the tour data to load
+            page.wait_for_selector('.tour-dates-container')
             
-            # Look for app.js script
-            app_js_script = soup.find('script', {'src': '/app.js'})
-            discovered_endpoints = []  # Initialize at the top level
-            
-            if app_js_script:
-                app_js_url = f"https://widget.seated.com{app_js_script['src']}"
-                logger.info(f"Found app.js URL: {app_js_url}")
-                
-                try:
-                    # Fetch app.js
-                    app_js_response = session.get(app_js_url, headers=headers)
-                    app_js_response.raise_for_status()
-                    app_js_content = app_js_response.text
-                    
-                    # Look for API endpoints in app.js
-                    api_patterns = [
-                        r'https?://[^\s<>"]+?/api/[^\s<>"]+',
-                        r'apiUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'baseUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'endpoint\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'url\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'baseURL\s*=\s*[\'"]([^\'"]+)[\'"]',
-                        r'API_URL\s*=\s*[\'"]([^\'"]+)[\'"]'
-                    ]
-                    
-                    for pattern in api_patterns:
-                        matches = re.findall(pattern, app_js_content)
-                        if matches:
-                            logger.info(f"Found API endpoints in app.js: {matches}")
-                            discovered_endpoints.extend(matches)
-                    
-                    # Look for widget initialization code
-                    init_patterns = [
-                        r'new\s+SeatedWidget\(([^)]+)\)',
-                        r'SeatedWidget\.init\(([^)]+)\)',
-                        r'seated\.init\(([^)]+)\)',
-                        r'window\.seated\s*=\s*({[^}]+})',
-                        r'seated\.config\s*=\s*({[^}]+})'
-                    ]
-                    
-                    for pattern in init_patterns:
-                        matches = re.findall(pattern, app_js_content)
-                        if matches:
-                            logger.info(f"Found widget initialization: {matches}")
-                            # Try to parse the initialization parameters
-                            try:
-                                init_params = json.loads(matches[0])
-                                if isinstance(init_params, dict):
-                                    widget_config.update(init_params)
-                                    logger.info(f"Updated widget configuration: {widget_config}")
-                            except:
-                                pass
-                    
-                    # Look for API request patterns
-                    request_patterns = [
-                        r'fetch\([\'"]([^\'"]+)[\'"]',
-                        r'axios\.get\([\'"]([^\'"]+)[\'"]',
-                        r'\.get\([\'"]([^\'"]+)[\'"]',
-                        r'\.post\([\'"]([^\'"]+)[\'"]'
-                    ]
-                    
-                    for pattern in request_patterns:
-                        matches = re.findall(pattern, app_js_content)
-                        if matches:
-                            logger.info(f"Found API request patterns: {matches}")
-                            for match in matches:
-                                if '/api/' in match:
-                                    discovered_endpoints.append(match)
-                    
-                except Exception as e:
-                    logger.error(f"Error fetching app.js: {e}")
-            
-            # Try different API endpoints
-            base_endpoints = [
-                f"https://widget.seated.com/api/v1/artists/{artist_id}/events",
-                f"https://widget.seated.com/api/v2/artists/{artist_id}/events",
-                f"https://widget.seated.com/api/v1/artists/{artist_id}/shows",
-                f"https://widget.seated.com/api/v2/artists/{artist_id}/shows",
-                f"https://widget.seated.com/api/artists/{artist_id}/events",
-                f"https://widget.seated.com/api/artists/{artist_id}/shows",
-                f"https://api.seated.com/v1/artists/{artist_id}/events",
-                f"https://api.seated.com/v2/artists/{artist_id}/events",
-                f"https://api.seated.com/v1/artists/{artist_id}/shows",
-                f"https://api.seated.com/v2/artists/{artist_id}/shows"
-            ]
-            
-            # Add any endpoints found in app.js
-            if discovered_endpoints:
-                logger.info(f"Adding discovered endpoints: {discovered_endpoints}")
-                base_endpoints.extend(discovered_endpoints)
-            
-            seated_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Origin': 'https://www.goosetheband.com',
-                'Referer': 'https://www.goosetheband.com/tour',
-                'Connection': 'keep-alive',
-                'Content-Type': 'application/json',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'cross-site',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'X-Requested-With': 'XMLHttpRequest',
-                'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'Authorization': 'Bearer null',
-                'X-Seated-Widget-Version': widget_config.get('data-css-version', '3'),
-                'X-Seated-Environment': widget_config.get('data-dev-env', 'production'),
-                'DNT': '1',
-                'TE': 'trailers',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Host': 'widget.seated.com'
-            }
-            
-            # List of artist IDs to try
-            artist_ids_to_try = [
-                artist_id,  # Try the found ID first
-                '4885cbee-8af5-46b7-b289-46c4e6307690',  # Try the ID from the HTML response
-                'fe8f12bb-393b-4746-a9c3-11b276c68b5d'  # Try the previous ID
-            ]
-            
-            for current_artist_id in artist_ids_to_try:
-                for endpoint in base_endpoints:
-                    try:
-                        current_url = endpoint.replace('{artist_id}', current_artist_id)
-                        logger.info(f"Trying Seated API endpoint: {current_url}")
-                        
-                        # Add a small delay between requests
-                        time.sleep(1)
-                        
-                        seated_response = session.get(current_url, headers=seated_headers)
-                        seated_response.raise_for_status()
-                        
-                        # Log response details for debugging
-                        logger.info(f"Seated API response status: {seated_response.status_code}")
-                        logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
-                        
-                        # Check if response is HTML
-                        content_type = seated_response.headers.get('Content-Type', '')
-                        if 'text/html' in content_type:
-                            # Try to extract API endpoint from HTML
-                            html_content = seated_response.text
-                            if 'app.js' in html_content:
-                                logger.info("Found app.js reference in HTML response")
-                                # Look for any API-related URLs in the HTML
-                                api_urls = re.findall(r'https?://[^\s<>"]+?/api/[^\s<>"]+', html_content)
-                                if api_urls:
-                                    logger.info(f"Found potential API URLs in HTML: {api_urls}")
-                                    # Add these URLs to our endpoints list
-                                    base_endpoints.extend(api_urls)
-                                
-                                # Look for widget configuration in HTML
-                                widget_config_match = re.search(r'window\.seated\s*=\s*({[^}]+})', html_content)
-                                if widget_config_match:
-                                    try:
-                                        config = json.loads(widget_config_match.group(1))
-                                        widget_config.update(config)
-                                        logger.info(f"Updated widget configuration from HTML: {widget_config}")
-                                    except:
-                                        pass
+            # Extract tour data using JavaScript in the page context
+            logger.info("Extracting tour dates...")
+            tour_dates = page.evaluate('''
+                () => {
+                    const dates = [];
+                    // Select all event containers
+                    document.querySelectorAll('.tour-dates-container .touring-event').forEach(el => {
+                        // Check if it's not a past event (some sites gray out or mark past events)
+                        if (!el.classList.contains('past-event')) {
+                            // Extract date info
+                            const dateElement = el.querySelector('.date-text');
+                            const dateStr = dateElement ? dateElement.innerText.trim() : '';
                             
-                            logger.warning(f"Received HTML response for endpoint {current_url}, trying next...")
-                            continue
-                        
-                        # Try to parse the response as JSON
+                            // Extract venue info
+                            const venueElement = el.querySelector('.event-venue');
+                            const venue = venueElement ? venueElement.innerText.trim() : '';
+                            
+                            // Extract location info
+                            const locationElement = el.querySelector('.event-location');
+                            const location = locationElement ? locationElement.innerText.trim() : '';
+                            
+                            // Extract ticket link
+                            const ticketElement = el.querySelector('a.tickets-button');
+                            const ticketLink = ticketElement ? ticketElement.href : '';
+                            
+                            // Extract any additional info (like festival name, support acts)
+                            const infoElement = el.querySelector('.event-info');
+                            const additionalInfo = infoElement ? infoElement.innerText.trim() : '';
+                            
+                            dates.push({
+                                date: dateStr,
+                                venue: venue,
+                                location: location,
+                                ticketLink: ticketLink,
+                                additionalInfo: additionalInfo
+                            });
+                        }
+                    });
+                    return dates;
+                }
+            ''')
+            
+            # Process dates to ensure consistent format if needed
+            processed_dates = []
+            for event in tour_dates:
+                # Try to parse and standardize the date format
+                try:
+                    date_str = event['date']
+                    # Handle various date formats that might be used
+                    date_obj = None
+                    
+                    # Try common formats
+                    for fmt in ['%b %d, %Y', '%B %d, %Y', '%m/%d/%Y']:
                         try:
-                            seated_data = seated_response.json()
-                            
-                            if isinstance(seated_data, list):
-                                tour_dates = []
-                                for event in seated_data:
-                                    try:
-                                        # Extract date
-                                        date_text = event.get('date', '')
-                                        if not date_text and event.get('start_time'):
-                                            date = datetime.fromtimestamp(int(event['start_time']))
-                                            date_text = date.strftime('%B %d, %Y')
-                                        
-                                        # Extract venue and location
-                                        venue_text = event.get('venue', {}).get('name', 'Venue TBA')
-                                        city = event.get('venue', {}).get('city', '')
-                                        state = event.get('venue', {}).get('state', '')
-                                        location_text = f"{city}, {state}" if city and state else "Location TBA"
-                                        
-                                        if date_text and venue_text and location_text:
-                                            logger.info(f"Found tour date from Seated: {date_text} at {venue_text} in {location_text}")
-                                            tour_dates.append({
-                                                'date': date_text,
-                                                'venue': venue_text,
-                                                'location': location_text
-                                            })
-                                    except Exception as e:
-                                        logger.error(f"Error processing Seated event: {e}")
-                                        continue
-                                
-                                if tour_dates:
-                                    return tour_dates
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse Seated API response as JSON: {e}")
-                            logger.error(f"Raw response content: {seated_response.text[:1000]}")  # Log first 1000 chars
-                            continue
-                            
-                    except requests.exceptions.RequestException as e:
-                        logger.error(f"Error fetching Seated data for endpoint {current_url}: {e}")
-                        if hasattr(e, 'response') and e.response is not None:
-                            logger.error(f"Seated response status: {e.response.status_code}")
-                            logger.error(f"Seated response headers: {e.response.headers}")
-                            logger.error(f"Seated response content: {e.response.text[:1000]}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Unexpected error with Seated API for endpoint {current_url}: {e}")
-                        import traceback
-                        logger.error(f"Traceback: {traceback.format_exc()}")
-                        continue
-        
-        # If Seated API fails, try parsing the HTML directly
-        logger.info("Attempting to parse HTML directly...")
-        
-        # Look for any div that might contain tour dates
-        tour_dates = []
-        
-        # First, try to find the main content area
-        main_content = soup.find('div', class_='Content-inner')
-        if not main_content:
-            main_content = soup.find('div', class_='Main-content')
-        
-        if main_content:
-            logger.info("Found main content area")
-            
-            # Look for any divs that might contain tour dates
-            potential_containers = main_content.find_all(['div', 'section'], recursive=True)
-            logger.info(f"Found {len(potential_containers)} potential containers")
-            
-            # Log all div classes for debugging
-            all_divs = main_content.find_all('div', class_=True)
-            logger.info("All div classes found in main content:")
-            for div in all_divs:
-                logger.info(f"Div class: {div.get('class')}")
-            
-            for container in potential_containers:
-                try:
-                    # Skip containers that are likely not tour dates
-                    if any(term in str(container).lower() for term in ['header', 'footer', 'nav', 'menu', 'social']):
-                        continue
-                    
-                    # Look for text that might be a date
-                    text = container.get_text()
-                    if not text:
-                        continue
-                    
-                    # Check if the text contains a year (2024 or 2025)
-                    if not any(year in text for year in ['2024', '2025']):
-                        continue
-                    
-                    # Try to extract date, venue, and location
-                    lines = [line.strip() for line in text.split('\n') if line.strip()]
-                    
-                    for i, line in enumerate(lines):
-                        # Look for a line that contains a date
-                        if any(year in line for year in ['2024', '2025']):
-                            date_text = line
-                            venue_text = "Venue TBA"
-                            location_text = "Location TBA"
-                            
-                            # Look for venue and location in nearby lines
-                            for j in range(max(0, i-2), min(len(lines), i+3)):
-                                if j != i:  # Skip the date line
-                                    if not any(year in lines[j] for year in ['2024', '2025']):
-                                        if venue_text == "Venue TBA":
-                                            venue_text = lines[j]
-                                        elif location_text == "Location TBA":
-                                            location_text = lines[j]
-                            
-                            # Clean up the text
-                            date_text = ' '.join(date_text.split())
-                            venue_text = ' '.join(venue_text.split())
-                            location_text = ' '.join(location_text.split())
-                            
-                            # Skip if this looks like a header or marquee
-                            if any(term in date_text.lower() for term in ['on tour', 'goose', 'tour dates']):
-                                continue
-                            
-                            logger.info(f"Found tour date: {date_text} at {venue_text} in {location_text}")
-                            
-                            tour_dates.append({
-                                'date': date_text,
-                                'venue': venue_text,
-                                'location': location_text
-                            })
+                            date_obj = datetime.strptime(date_str, fmt)
                             break
-                            
+                        except ValueError:
+                            continue
+                    
+                    if date_obj:
+                        # Use a standard date format for the output
+                        event['date'] = date_obj.strftime('%Y-%m-%d')
+                    
                 except Exception as e:
-                    logger.error(f"Error processing container: {e}")
-                    continue
-        
-        if not tour_dates:
-            logger.warning("No tour dates found in HTML")
-            return None
+                    logger.warning(f"Could not parse date '{event['date']}': {e}")
+                
+                processed_dates.append(event)
             
-        logger.info(f"Successfully found {len(tour_dates)} tour dates")
-        
-        # Save to JSON file with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f'tour_dates_{timestamp}.json'
-        
-        # Use Railway's data directory if available, otherwise use current directory
-        data_dir = os.getenv('RAILWAY_DATA_DIR', '.')
-        filepath = os.path.join(data_dir, filename)
-        
-        with open(filepath, 'w') as f:
-            json.dump(tour_dates, f, indent=4)
-        logger.info(f"Tour dates saved to {filepath}")
-        
-        return tour_dates
-        
-    except requests.RequestException as e:
-        logger.error(f"Error fetching tour dates: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error in get_tour_dates: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return None
+            return processed_dates
+            
+        except Exception as e:
+            logger.error(f"Error scraping tour dates: {e}")
+            return None
+        finally:
+            browser.close()
 
 def main():
     logger.info("Starting Goose Tour Date Scraper")
@@ -397,11 +108,25 @@ def main():
     
     while True:
         try:
-            tour_dates = get_tour_dates()
-            if tour_dates:
-                logger.info("Successfully retrieved tour dates")
+            # Scrape the tour dates
+            tour_dates = scrape_goose_tour_dates()
+            
+            if not tour_dates:
+                logger.warning("No tour dates found. The page structure may have changed.")
             else:
-                logger.warning("Failed to retrieve tour dates")
+                # Create a DataFrame
+                df = pd.DataFrame(tour_dates)
+                
+                # Generate timestamp for the filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Use Railway's data directory if available, otherwise use current directory
+                data_dir = os.getenv('RAILWAY_DATA_DIR', '.')
+                csv_filename = os.path.join(data_dir, f'goose_tour_dates_{timestamp}.csv')
+                
+                # Export to CSV
+                df.to_csv(csv_filename, index=False)
+                logger.info(f"Exported {len(tour_dates)} tour dates to {csv_filename}")
             
             # Wait for 24 hours before next check
             logger.info("Waiting 24 hours before next check...")
