@@ -125,7 +125,16 @@ def filter_dates_by_month(tour_dates, target_month):
             filtered_dates.append(event)
     return filtered_dates
 
-def get_formatted_tour_dates(month):
+def get_available_months(tour_dates):
+    """Get a list of months that have tour dates."""
+    months = set()
+    for event in tour_dates:
+        event_month = get_month_from_date(event['date'])
+        if event_month:
+            months.add(event_month)
+    return sorted(list(months), key=lambda x: datetime.strptime(x, "%B").month)
+
+def get_formatted_tour_dates(month=None):
     """Get and format tour dates for Discord output."""
     tour_dates = scrape_goose_tour_dates()
     
@@ -140,6 +149,17 @@ def get_formatted_tour_dates(month):
     
     # Sort dates chronologically using the first date for date ranges
     processed_dates.sort(key=lambda x: x['date'].split(" to ")[0])
+    
+    # If no month specified, return available months
+    if month is None:
+        available_months = get_available_months(processed_dates)
+        if not available_months:
+            return ["No upcoming tour dates found."]
+            
+        message = "**Goose Tour Dates**\n"
+        message += "Goose is playing during these months:\n"
+        message += ", ".join(available_months)
+        return [message]
     
     # Filter by month
     processed_dates = filter_dates_by_month(processed_dates, month)

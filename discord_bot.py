@@ -40,19 +40,12 @@ WEBSOCKET_TIMEOUT = 30
 CONNECTION_TIMEOUT = ClientTimeout(total=30, connect=10)
 MESSAGE_RETRY_DELAY = 2  # Delay between message retries
 MESSAGE_SEND_DELAY = 1  # Delay between sending messages to avoid rate limits
-HEARTBEAT_TIMEOUT = 60  # Maximum time to wait for heartbeat response
-HEARTBEAT_INTERVAL = 15  # Time between heartbeat checks
-HEARTBEAT_WARNING_THRESHOLD = 45  # Time before timeout to log warning
 
 # Add connection state tracking
 connection_attempts = 0
 last_connection_time = 0
 is_reconnecting = False
-last_heartbeat = 0
-heartbeat_task = None
 session = None
-consecutive_heartbeat_failures = 0
-MAX_CONSECUTIVE_FAILURES = 3
 
 # Add month validation
 VALID_MONTHS = [
@@ -156,53 +149,10 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         except:
             logger.error("Failed to send error message to user")
 
-async def check_heartbeat():
-    """Monitor heartbeat and handle disconnections."""
-    global last_heartbeat, heartbeat_task, is_reconnecting, consecutive_heartbeat_failures
-    while True:
-        try:
-            if not bot.is_ready():
-                await asyncio.sleep(HEARTBEAT_INTERVAL)
-                continue
-                
-            current_time = time.time()
-            time_since_last_heartbeat = current_time - last_heartbeat
-            
-            # Log warning if approaching timeout
-            if time_since_last_heartbeat > HEARTBEAT_WARNING_THRESHOLD:
-                logger.warning(f"Heartbeat warning: {time_since_last_heartbeat:.1f}s since last heartbeat")
-                consecutive_heartbeat_failures += 1
-            else:
-                consecutive_heartbeat_failures = 0
-            
-            # Only disconnect if we've had multiple consecutive failures
-            if time_since_last_heartbeat > HEARTBEAT_TIMEOUT and consecutive_heartbeat_failures >= MAX_CONSECUTIVE_FAILURES:
-                logger.warning(f"Heartbeat timeout detected after {consecutive_heartbeat_failures} consecutive failures")
-                if not is_reconnecting:
-                    is_reconnecting = True
-                    await handle_disconnect()
-            elif time_since_last_heartbeat <= HEARTBEAT_WARNING_THRESHOLD:
-                consecutive_heartbeat_failures = 0
-                
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Error in heartbeat check: {e}")
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-
 async def handle_disconnect():
     """Handle bot disconnection and reconnection."""
-    global connection_attempts, is_reconnecting, heartbeat_task, session, consecutive_heartbeat_failures
+    global connection_attempts, is_reconnecting, session
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
-    
-    # Cancel existing heartbeat task if it exists
-    if heartbeat_task and not heartbeat_task.done():
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
     
     # Close existing session if it exists
     if session and not session.closed:
@@ -240,9 +190,6 @@ async def handle_disconnect():
                     await bot.start(token)
                     logger.info("Successfully reconnected to Discord")
                     is_reconnecting = False
-                    consecutive_heartbeat_failures = 0  # Reset failure counter
-                    # Start new heartbeat task
-                    heartbeat_task = asyncio.create_task(check_heartbeat())
                     return
             except asyncio.TimeoutError:
                 logger.error("Connection attempt timed out")
@@ -305,11 +252,9 @@ async def restart_bot():
 @bot.event
 async def on_ready():
     """Called when the bot is ready and connected to Discord."""
-    global connection_attempts, last_connection_time, last_heartbeat, heartbeat_task, session, consecutive_heartbeat_failures
+    global connection_attempts, last_connection_time, session
     connection_attempts = 0
     last_connection_time = time.time()
-    last_heartbeat = time.time()
-    consecutive_heartbeat_failures = 0
     
     logger.info(f'Bot is ready! Logged in as {bot.user.name}')
     
@@ -327,26 +272,18 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
     
-    # Start heartbeat monitoring
-    if heartbeat_task and not heartbeat_task.done():
-        heartbeat_task.cancel()
-    heartbeat_task = asyncio.create_task(check_heartbeat())
+    # Set bot's activity to show it's online
+    try:
+        await bot.change_presence(activity=discord.Game(name="Goose Tour Dates"))
+    except Exception as e:
+        logger.warning(f"Failed to set bot activity: {e}")
 
 @bot.event
 async def on_disconnect():
     """Called when the bot disconnects from Discord."""
-    global last_heartbeat, is_reconnecting, consecutive_heartbeat_failures
+    global is_reconnecting
     if not is_reconnecting:  # Only handle if not already reconnecting
-        last_heartbeat = time.time()  # Reset heartbeat timestamp
-        consecutive_heartbeat_failures = 0  # Reset failure counter
         await handle_disconnect()
-
-@bot.event
-async def on_heartbeat():
-    """Called when the bot receives a heartbeat from Discord."""
-    global last_heartbeat, consecutive_heartbeat_failures
-    last_heartbeat = time.time()
-    consecutive_heartbeat_failures = 0  # Reset failure counter on successful heartbeat
 
 @bot.event
 async def on_error(event, *args, **kwargs):
@@ -357,9 +294,9 @@ async def on_error(event, *args, **kwargs):
     elif event == 'on_command_error':
         logger.error(f"Command error: {args[0] if args else 'No error details'}")
 
-@bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates for a specific month")
-async def tour_dates(interaction: discord.Interaction, month: str):
-    """Slash command to get tour dates for a specific month."""
+@bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates. Optionally specify a month to filter results.")
+async def tour_dates(interaction: discord.Interaction, month: str = None):
+    """Slash command to get tour dates. If no month is specified, shows available months."""
     if is_reconnecting:
         try:
             await interaction.response.send_message(
@@ -370,8 +307,8 @@ async def tour_dates(interaction: discord.Interaction, month: str):
             logger.error("Failed to send reconnecting message")
         return
     
-    # Validate month
-    if month not in VALID_MONTHS:
+    # Validate month if provided
+    if month and month not in VALID_MONTHS:
         try:
             await interaction.response.send_message(
                 f"Invalid month. Please use one of: {', '.join(VALID_MONTHS)}",
@@ -428,11 +365,11 @@ async def tour_dates(interaction: discord.Interaction, month: str):
         return
     
     try:
-        # Get the tour dates for the specified month
-        monthly_messages = get_formatted_tour_dates(month)
+        # Get the tour dates or available months
+        messages = get_formatted_tour_dates(month)
         
         # Send the messages
-        await send_monthly_messages(interaction, monthly_messages)
+        await send_monthly_messages(interaction, messages)
             
     except Exception as e:
         logger.error(f"Error in tour_dates command: {e}")
