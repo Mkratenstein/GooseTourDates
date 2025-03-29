@@ -312,6 +312,9 @@ def main():
                         except Exception as e:
                             logger.error(f"Error formatting event: {e}")
                             continue
+                
+                # Add a final separator after all events
+                logger.info("\n" + "=" * 50)
             
             # Wait for 24 hours before next check
             logger.info("\nWaiting 24 hours before next check...")
