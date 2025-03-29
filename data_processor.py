@@ -178,7 +178,8 @@ def get_formatted_tour_dates(month=None):
             
         message = "**Goose Tour Dates**\n"
         message += "Goose has announced that the Organization is playing during these months:\n"
-        message += ", ".join(available_months)
+        message += ", ".join(available_months) + "\n"
+        message += "You can now use the /tourdates command to get the tour dates for a specific month."
         return [message]
     
     # Filter by month
