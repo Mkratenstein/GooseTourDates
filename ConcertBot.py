@@ -278,7 +278,7 @@ def format_event_output(event):
     if event['additionalInfo']:
         output_lines.append(f"Additional Info: {event['additionalInfo']}")
     
-    output_lines.append("-" * 30)
+    output_lines.append("-" * 50)  # Increased separator length
     return "\n".join(output_lines)
 
 def main():
@@ -320,9 +320,10 @@ def main():
                 
                 # Then print events grouped by month
                 for month in sorted(events_by_month.keys()):
-                    # Format month header
+                    # Format month header with extra spacing
                     month_output = [
-                        f"\n{month}",
+                        "\n" + "=" * 50,  # Add separator before month
+                        month,
                         "-" * len(month)
                     ]
                     logger.info("\n".join(month_output))
