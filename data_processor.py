@@ -71,25 +71,11 @@ def format_event_output(event):
     # Add venue and location on the same line
     output_lines.append(f"{event['venue']} | {event['location']}")
     
-    # Add ticket links if present
-    if event['ticketLinks']:
-        # Format ticket links more compactly
-        ticket_lines = []
-        current_line = "Tickets: "
-        for link in event['ticketLinks'].split("; "):
-            if len(current_line + link) > 80:  # Reasonable line length
-                ticket_lines.append(current_line)
-                current_line = "  " + link
-            else:
-                current_line += "; " + link
-        ticket_lines.append(current_line)
-        output_lines.extend(ticket_lines)
-    
     # Add additional info if present
     if event['additionalInfo']:
         # Format additional info more compactly
         info_lines = []
-        current_line = "Info: "
+        current_line = ""
         words = event['additionalInfo'].split()
         for word in words:
             if len(current_line + " " + word) > 80:  # Reasonable line length
@@ -99,6 +85,21 @@ def format_event_output(event):
                 current_line += " " + word
         info_lines.append(current_line)
         output_lines.extend(info_lines)
+    
+    # Add ticket links if present
+    if event['ticketLinks']:
+        # Format ticket links more compactly
+        ticket_lines = []
+        current_line = "**Tickets:** "
+        for link in event['ticketLinks'].split("; "):
+            if link.strip():  # Only process non-empty links
+                if len(current_line + link) > 80:  # Reasonable line length
+                    ticket_lines.append(current_line)
+                    current_line = "  " + link
+                else:
+                    current_line += "; " + link
+        ticket_lines.append(current_line)
+        output_lines.extend(ticket_lines)
     
     # Join with single newlines for better spacing
     return "\n".join(output_lines)
@@ -177,10 +178,10 @@ def get_formatted_tour_dates(month=None):
         if not available_months:
             return ["No upcoming tour dates found."]
             
-        message = "**Goose Tour Dates**\n"
-        message += "Goose has announced that the Organization is playing during these months:\n"
-        message += ", ".join(available_months) + "\n"
-        message += "You can now use the /tourdates command to get the tour dates for a specific month."
+        message = "**Goose Tour Dates**\n\n"
+        message += "**Available Tour Months:**\n"
+        message += "• " + "\n• ".join(available_months) + "\n\n"
+        message += "Use `/tourdates [month]` to view shows for a specific month."
         return [message]
     
     # Filter by month
@@ -193,7 +194,7 @@ def get_formatted_tour_dates(month=None):
     
     # Add header message with total count and month
     header_message = f"**Goose Tour Dates**\n"
-    header_message += f"Found {len(processed_dates)} upcoming shows in {month}:"
+    header_message += f"**{month} Shows** ({len(processed_dates)} upcoming)\n"
     messages.append(header_message)
     
     # Format each event as a separate message

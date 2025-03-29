@@ -327,15 +327,18 @@ async def tour_dates(interaction: discord.Interaction, month: str = None):
         return
     
     # Validate month if provided
-    if month and month not in VALID_MONTHS:
-        try:
-            await interaction.response.send_message(
-                f"Invalid month. Please use one of: {', '.join(VALID_MONTHS)}",
-                ephemeral=True
-            )
-        except:
-            logger.error("Failed to send invalid month message")
-        return
+    if month:
+        # Convert month to title case for validation
+        month = month.title()
+        if month not in VALID_MONTHS:
+            try:
+                await interaction.response.send_message(
+                    f"Invalid month. Please use one of: {', '.join(VALID_MONTHS)}",
+                    ephemeral=True
+                )
+            except:
+                logger.error("Failed to send invalid month message")
+            return
         
     # Get allowed role IDs from environment variables
     role_ids_str = os.getenv('ALLOWED_ROLE_IDS', '')
