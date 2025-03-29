@@ -63,21 +63,21 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
             # Split message into chunks if needed
             if len(message) > 1900:  # Leave some buffer for formatting
                 # Split by month header
-                parts = message.split("\n📅")
+                parts = message.split("\n**")
                 current_chunk = parts[0]
                 
                 for part in parts[1:]:
                     # Add back the month header
-                    part = "📅" + part
+                    part = "**" + part
                     
                     # If this part would exceed the limit, split it by events
                     if len(current_chunk + "\n" + part) > 1900:
                         # Split by event separator
-                        events = part.split("─" * 40)
+                        events = part.split("───")
                         event_chunk = events[0]
                         
                         for event in events[1:]:
-                            event = "─" * 40 + event
+                            event = "───" + event
                             if len(current_chunk + "\n" + event_chunk + "\n" + event) > 1900:
                                 # Send current chunk and start new one
                                 await interaction.followup.send(current_chunk, ephemeral=True)
@@ -102,7 +102,7 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
         logger.error(f"Error sending monthly messages: {e}")
         try:
             await interaction.followup.send(
-                "❌ An error occurred while sending the tour dates. Please try again later.",
+                "An error occurred while sending the tour dates. Please try again later.",
                 ephemeral=True
             )
         except:
