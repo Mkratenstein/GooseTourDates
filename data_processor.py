@@ -64,18 +64,17 @@ def format_event_output(event):
     """Format a single event's output as a single string."""
     output_lines = []
     
-    # Format date with bold
-    output_lines.append(f"**Date:** {format_date_for_display(event['date'])}")
+    # Format date with bold and emoji
+    output_lines.append(f"🎵 **{format_date_for_display(event['date'])}**")
     
-    # Add venue and location with bold headers
-    output_lines.append(f"**Venue:** {event['venue']}")
-    output_lines.append(f"**Location:** {event['location']}")
+    # Add venue and location on the same line
+    output_lines.append(f"📍 {event['venue']} | {event['location']}")
     
     # Add ticket links if present
     if event['ticketLinks']:
-        # Split ticket links into multiple lines if too long
+        # Format ticket links more compactly
         ticket_lines = []
-        current_line = "**Ticket Links:** "
+        current_line = "🎫 "
         for link in event['ticketLinks'].split("; "):
             if len(current_line + link) > 80:  # Reasonable line length
                 ticket_lines.append(current_line)
@@ -87,9 +86,9 @@ def format_event_output(event):
     
     # Add additional info if present
     if event['additionalInfo']:
-        # Split additional info into multiple lines if too long
+        # Format additional info more compactly
         info_lines = []
-        current_line = "**Additional Info:** "
+        current_line = "ℹ️ "
         words = event['additionalInfo'].split()
         for word in words:
             if len(current_line + " " + word) > 80:  # Reasonable line length
@@ -100,11 +99,8 @@ def format_event_output(event):
         info_lines.append(current_line)
         output_lines.extend(info_lines)
     
-    # Add separator with emoji
-    output_lines.append("🎸" * 20)
-    
-    # Join with double newlines for better spacing
-    return "\n\n".join(output_lines)
+    # Join with single newlines for better spacing
+    return "\n".join(output_lines)
 
 def get_formatted_tour_dates():
     """Get and format tour dates for Discord output."""
@@ -152,7 +148,7 @@ def get_formatted_tour_dates():
         # Start with month header using bold and emoji
         month_message = [
             f"\n📅 **{month}**",
-            "🎸" * 20
+            "─" * 40  # Use a simple line separator instead of emojis
         ]
         
         # Sort events within each month by date
@@ -163,6 +159,7 @@ def get_formatted_tour_dates():
         for date in month_events:
             try:
                 month_message.append(format_event_output(date))
+                month_message.append("─" * 40)  # Add separator between events
             except Exception as e:
                 logger.error(f"Error formatting event: {e}")
                 continue
