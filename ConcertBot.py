@@ -57,10 +57,10 @@ def get_tour_dates():
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
             # Try to fetch from Seated widget's API
-            seated_url = f"https://api.seated.com/v1/artists/{artist_id}/events"
+            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/json',
+                'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Origin': 'https://www.goosetheband.com',
                 'Referer': 'https://www.goosetheband.com/tour',
@@ -75,7 +75,9 @@ def get_tour_dates():
                 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
                 'sec-ch-ua-mobile': '?0',
                 'sec-ch-ua-platform': '"Windows"',
-                'Authorization': 'Bearer null'  # The widget uses this
+                'Authorization': 'Bearer null',  # The widget uses this
+                'X-Seated-Widget-Version': '3',  # From the widget's data-css-version
+                'X-Seated-Environment': 'development'  # From the widget's data-dev-env
             }
             
             try:
