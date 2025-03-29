@@ -44,6 +44,9 @@ MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAY = 10
 WEBSOCKET_TIMEOUT = 30
 
+# Configure bot's HTTP session
+bot.http.connector._timeout = WEBSOCKET_TIMEOUT
+
 def get_chrome_version():
     """Get the installed Chrome version."""
     try:
@@ -478,9 +481,6 @@ async def on_disconnect():
                 logger.error("No Discord token found in environment variables!")
                 return
             
-            # Set up websocket timeout
-            bot.http.connector._timeout = WEBSOCKET_TIMEOUT
-            
             # Start the bot with a timeout
             try:
                 async with asyncio.timeout(WEBSOCKET_TIMEOUT):
@@ -521,9 +521,6 @@ async def restart_bot():
         if not token:
             logger.error("No Discord token found in environment variables!")
             return
-        
-        # Set up websocket timeout
-        bot.http.connector._timeout = WEBSOCKET_TIMEOUT
         
         # Start a new session with timeout
         try:
@@ -601,9 +598,6 @@ def main():
     if not token:
         logger.error("No Discord token found in environment variables!")
         return
-    
-    # Set up websocket timeout
-    bot.http.connector._timeout = WEBSOCKET_TIMEOUT
     
     # Run the Discord bot with retry logic
     while True:
