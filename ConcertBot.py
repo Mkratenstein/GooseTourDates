@@ -56,6 +56,64 @@ def get_tour_dates():
             artist_id = seated_widget.get('data-artist-id')
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
+            # Extract widget configuration
+            widget_config = {}
+            for attr in seated_widget.attrs:
+                if attr.startswith('data-'):
+                    widget_config[attr] = seated_widget.get(attr)
+            logger.info(f"Widget configuration: {widget_config}")
+            
+            # Look for app.js script
+            app_js_script = soup.find('script', {'src': '/app.js'})
+            if app_js_script:
+                app_js_url = f"https://widget.seated.com{app_js_script['src']}"
+                logger.info(f"Found app.js URL: {app_js_url}")
+                
+                try:
+                    # Fetch app.js
+                    app_js_response = session.get(app_js_url, headers=seated_headers)
+                    app_js_response.raise_for_status()
+                    app_js_content = app_js_response.text
+                    
+                    # Look for API endpoints in app.js
+                    import re
+                    api_patterns = [
+                        r'https?://[^\s<>"]+?/api/[^\s<>"]+',
+                        r'apiUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        r'baseUrl\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        r'endpoint\s*=\s*[\'"]([^\'"]+)[\'"]'
+                    ]
+                    
+                    api_endpoints = []
+                    for pattern in api_patterns:
+                        matches = re.findall(pattern, app_js_content)
+                        if matches:
+                            logger.info(f"Found API endpoints in app.js: {matches}")
+                            api_endpoints.extend(matches)
+                    
+                    # Look for widget initialization code
+                    init_patterns = [
+                        r'new\s+SeatedWidget\(([^)]+)\)',
+                        r'SeatedWidget\.init\(([^)]+)\)',
+                        r'seated\.init\(([^)]+)\)'
+                    ]
+                    
+                    for pattern in init_patterns:
+                        matches = re.findall(pattern, app_js_content)
+                        if matches:
+                            logger.info(f"Found widget initialization: {matches}")
+                            # Try to parse the initialization parameters
+                            try:
+                                init_params = json.loads(matches[0])
+                                if isinstance(init_params, dict):
+                                    widget_config.update(init_params)
+                                    logger.info(f"Updated widget configuration: {widget_config}")
+                            except:
+                                pass
+                    
+                except Exception as e:
+                    logger.error(f"Error fetching app.js: {e}")
+            
             # Try different API endpoints
             api_endpoints = [
                 f"https://widget.seated.com/api/v1/artists/{artist_id}/events",
@@ -65,6 +123,10 @@ def get_tour_dates():
                 f"https://widget.seated.com/api/artists/{artist_id}/events",
                 f"https://widget.seated.com/api/artists/{artist_id}/shows"
             ]
+            
+            # Add any endpoints found in app.js
+            if api_endpoints:
+                api_endpoints.extend(api_endpoints)
             
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -84,8 +146,8 @@ def get_tour_dates():
                 'sec-ch-ua-mobile': '?0',
                 'sec-ch-ua-platform': '"Windows"',
                 'Authorization': 'Bearer null',
-                'X-Seated-Widget-Version': '3',
-                'X-Seated-Environment': 'production',
+                'X-Seated-Widget-Version': widget_config.get('data-css-version', '3'),
+                'X-Seated-Environment': widget_config.get('data-dev-env', 'production'),
                 'DNT': '1',
                 'TE': 'trailers',
                 'Accept-Encoding': 'gzip, deflate, br',
@@ -123,7 +185,6 @@ def get_tour_dates():
                             if 'app.js' in html_content:
                                 logger.info("Found app.js reference in HTML response")
                                 # Look for any API-related URLs in the HTML
-                                import re
                                 api_urls = re.findall(r'https?://[^\s<>"]+?/api/[^\s<>"]+', html_content)
                                 if api_urls:
                                     logger.info(f"Found potential API URLs in HTML: {api_urls}")
