@@ -194,7 +194,7 @@ def get_tour_dates():
         print("Successfully parsed HTML")
         
         # Remove SVG elements, scripts, and marquee elements as they're not relevant for tour dates
-        for element in soup.find_all(['svg', 'script', 'style', 'div', 'h1'], class_=['Marquee-item', 'Marquee-track']):
+        for element in soup.find_all(['svg', 'script', 'style', 'div', 'h1', 'nav'], class_=['Marquee-item', 'Marquee-track', 'Footer-nav', 'sqs-svg-icon--social']):
             element.decompose()
         
         tour_dates = []
@@ -211,13 +211,20 @@ def get_tour_dates():
         seated_widget = soup.find('div', id='seated-55fdf2c0')
         if seated_widget:
             print("Found Seated widget")
+            artist_id = seated_widget.get('data-artist-id')
+            print(f"Artist ID: {artist_id}")
+            
             # The Seated widget loads tour dates dynamically via JavaScript
             # We'll need to make a separate request to their API
-            seated_url = f"https://widget.seated.com/api/v1/artists/{seated_widget.get('data-artist-id')}/events"
+            seated_url = f"https://widget.seated.com/api/v1/artists/{artist_id}/events"
+            print(f"Fetching Seated data from: {seated_url}")
+            
             try:
                 seated_response = requests.get(seated_url, headers=headers)
                 seated_response.raise_for_status()
                 seated_data = seated_response.json()
+                print(f"Seated API response status: {seated_response.status_code}")
+                print(f"Seated data: {seated_data}")
                 
                 for event in seated_data.get('events', []):
                     try:
@@ -237,9 +244,16 @@ def get_tour_dates():
                         continue
             except Exception as e:
                 print(f"Error fetching Seated data: {e}")
+                print(f"Seated response content: {e.response.text if hasattr(e, 'response') else 'No response content'}")
+        else:
+            print("Could not find Seated widget in HTML")
+            # Print the full HTML for debugging
+            print("Full HTML content:")
+            print(soup.prettify())
         
         # If we didn't find any dates from Seated, try the regular HTML parsing
         if not tour_dates:
+            print("No dates found from Seated, trying HTML parsing...")
             # Try to find tour dates in various ways
             potential_containers = main_content.find_all(['div', 'section', 'article'], class_=[
                 'tour-dates', 'tour', 'events', 'tour-events', 'tour-schedule',
