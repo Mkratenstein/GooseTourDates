@@ -56,14 +56,8 @@ def get_tour_dates():
             artist_id = seated_widget.get('data-artist-id')
             logger.info(f"Found Seated widget with artist ID: {artist_id}")
             
-            # First, try to get the widget's JavaScript
-            widget_js_url = "https://widget.seated.com/app.js"
-            logger.info(f"Fetching widget JavaScript from: {widget_js_url}")
-            js_response = session.get(widget_js_url, headers=headers)
-            js_response.raise_for_status()
-            
-            # Now try to fetch from Seated widget's GraphQL API
-            seated_url = "https://widget.seated.com/graphql"
+            # Try to fetch from Seated widget's API
+            seated_url = f"https://api.seated.com/v1/artists/{artist_id}/events"
             seated_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'application/json',
@@ -80,64 +74,35 @@ def get_tour_dates():
                 'X-Requested-With': 'XMLHttpRequest',
                 'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
                 'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"'
-            }
-            
-            # GraphQL query for events
-            graphql_query = {
-                "operationName": "GetArtistEvents",
-                "variables": {
-                    "artistId": artist_id,
-                    "first": 100,
-                    "after": None
-                },
-                "query": """
-                query GetArtistEvents($artistId: ID!, $first: Int!, $after: String) {
-                    artist(id: $artistId) {
-                        events(first: $first, after: $after) {
-                            edges {
-                                node {
-                                    id
-                                    name
-                                    date
-                                    startTime
-                                    venue {
-                                        name
-                                        city
-                                        state
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                """
+                'sec-ch-ua-platform': '"Windows"',
+                'Authorization': 'Bearer null'  # The widget uses this
             }
             
             try:
-                logger.info(f"Fetching Seated widget API from: {seated_url}")
-                seated_response = session.post(seated_url, headers=seated_headers, json=graphql_query)
+                logger.info(f"Fetching Seated API from: {seated_url}")
+                seated_response = session.get(seated_url, headers=seated_headers)
                 seated_response.raise_for_status()
                 
                 # Log response details for debugging
                 logger.info(f"Seated API response status: {seated_response.status_code}")
                 logger.info(f"Seated API response headers: {dict(seated_response.headers)}")
+                logger.info(f"Seated API response content: {seated_response.text[:1000]}")  # Log first 1000 chars
                 
                 # Try to parse the response as JSON
                 try:
                     seated_data = seated_response.json()
-                    logger.info(f"Seated API response data: {seated_data}")
                     
-                    if seated_data.get('data', {}).get('artist', {}).get('events', {}).get('edges'):
+                    if isinstance(seated_data, list):
                         tour_dates = []
-                        for edge in seated_data['data']['artist']['events']['edges']:
-                            event = edge['node']
+                        for event in seated_data:
                             try:
+                                # Extract date
                                 date_text = event.get('date', '')
-                                if not date_text and event.get('startTime'):
-                                    date = datetime.fromtimestamp(int(event['startTime']))
+                                if not date_text and event.get('start_time'):
+                                    date = datetime.fromtimestamp(int(event['start_time']))
                                     date_text = date.strftime('%B %d, %Y')
                                 
+                                # Extract venue and location
                                 venue_text = event.get('venue', {}).get('name', 'Venue TBA')
                                 city = event.get('venue', {}).get('city', '')
                                 state = event.get('venue', {}).get('state', '')
