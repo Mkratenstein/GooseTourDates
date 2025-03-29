@@ -136,6 +136,13 @@ def scrape_goose_tour_dates():
                 location_element = event.find_element(By.CSS_SELECTOR, ".seated-event-venue-location")
                 location = location_element.text.strip() if location_element else ""
                 
+                # Extract details info if present
+                try:
+                    details_element = event.find_element(By.CSS_SELECTOR, ".seated-event-details-cell")
+                    details = details_element.text.strip()
+                except:
+                    details = ""
+                
                 # Extract ticket links
                 ticket_links = []
                 ticket_elements = event.find_elements(By.CSS_SELECTOR, ".seated-event-link")
@@ -153,7 +160,7 @@ def scrape_goose_tour_dates():
                     "venue": venue,
                     "location": location,
                     "ticketLinks": ticket_links_str,
-                    "additionalInfo": ""  # No additional info in new structure
+                    "additionalInfo": details if details else ""  # Only include details if they exist
                 })
                 
             except Exception as e:
@@ -219,11 +226,14 @@ def main():
             if not tour_dates:
                 logger.warning("No tour dates found. The page structure may have changed.")
             else:
+                # Sort dates chronologically
+                tour_dates.sort(key=lambda x: x['date'])
+                
                 # Print tour dates in a readable format
                 logger.info(f"\nFound {len(tour_dates)} tour dates:")
                 logger.info("=" * 50)
                 for date in tour_dates:
-                    logger.info(f"\nDate: {date['date']}")
+                    logger.info(f"Date: {date['date']}")
                     logger.info(f"Venue: {date['venue']}")
                     logger.info(f"Location: {date['location']}")
                     logger.info(f"Ticket Links: {date['ticketLinks']}")
