@@ -36,6 +36,8 @@ COPY ConcertBot.py .
 ENV PYTHONUNBUFFERED=1
 ENV RAILWAY_DATA_DIR=/data
 ENV PYTHONIOENCODING=utf-8
+ENV CHROME_BIN=/usr/bin/google-chrome
+ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
 
 # Create data directory
 RUN mkdir -p /data
