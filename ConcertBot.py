@@ -384,8 +384,28 @@ async def on_ready():
 @bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
     """Slash command to get tour dates."""
+    # Get allowed role IDs from environment variables
+    role_ids_str = os.getenv('ALLOWED_ROLE_IDS', '')
+    if not role_ids_str:
+        logger.error("No allowed role IDs found in environment variables!")
+        await interaction.response.send_message(
+            "Configuration error: Allowed roles not set. Please contact an administrator.",
+            ephemeral=True
+        )
+        return
+    
+    try:
+        # Convert comma-separated string to list of integers
+        allowed_roles = [int(role_id.strip()) for role_id in role_ids_str.split(',')]
+    except ValueError as e:
+        logger.error(f"Error parsing role IDs: {e}")
+        await interaction.response.send_message(
+            "Configuration error: Invalid role ID format. Please contact an administrator.",
+            ephemeral=True
+        )
+        return
+    
     # Check if user has required roles
-    allowed_roles = [680100291806363673, 717506052534305328]  # Role IDs
     user_roles = [role.id for role in interaction.user.roles]
     
     if not any(role_id in user_roles for role_id in allowed_roles):

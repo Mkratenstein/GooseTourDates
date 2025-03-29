@@ -1,52 +1,109 @@
 # Goose Tour Dates Discord Bot
 
-A Discord bot that monitors and shares Goose concert tour dates from goosetheband.com.
+A Discord bot that scrapes and displays upcoming tour dates for the band Goose using slash commands.
 
 ## Features
 
-- Automatically posts tour dates to a specified channel every 24 hours
-- Slash command `/tour_dates` to manually fetch tour dates
-- Beautiful embed messages with venue and location information
+- `/tourdates` slash command to fetch and display upcoming tour dates
+- Role-based permission system for command access
+- Automatic formatting of dates and event information
+- Handles multi-day events and festivals
+- Ephemeral responses (only visible to command user)
+- Automatic message splitting for long responses
+- Retry mechanism for failed scraping attempts
 
-## Setup
+## Prerequisites
 
-1. Clone this repository
+- Python 3.12 or higher
+- Chrome browser
+- ChromeDriver
+- Discord Bot Token
+- Required Discord roles
+
+## Installation
+
+1. Clone the repository
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-3. Create a `.env` file with the following variables:
+
+3. Set up environment variables in `.env`:
    ```
-   DISCORD_TOKEN=your_discord_bot_token
-   CHANNEL_ID=your_discord_channel_id
+   DISCORD_TOKEN=your_discord_bot_token_here
+   ALLOWED_ROLE_IDS=role_id_1,role_id_2
    ```
 
-## Deployment to Railway
+4. Set up Chrome and ChromeDriver:
+   - Install Chrome browser
+   - Download and install ChromeDriver matching your Chrome version
+   - Set environment variables for Chrome paths:
+     ```
+     CHROME_BIN=/path/to/chrome
+     CHROMEDRIVER_PATH=/path/to/chromedriver
+     ```
 
-1. Push your code to GitHub
-2. Create a new project on Railway
-3. Connect your GitHub repository
-4. Add the following environment variables in Railway:
-   - `DISCORD_TOKEN`: Your Discord bot token
-   - `CHANNEL_ID`: The Discord channel ID where tour dates will be posted
+## Docker Deployment
 
-## Discord Bot Setup
+1. Build the Docker image:
+   ```bash
+   docker build -t goose-tour-dates-bot .
+   ```
 
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application
-3. Go to the "Bot" section and create a bot
-4. Copy the bot token and add it to your environment variables
-5. Enable the following bot intents:
+2. Run the container:
+   ```bash
+   docker run -d \
+     --env-file .env \
+     --name goose-tour-dates-bot \
+     goose-tour-dates-bot
+   ```
+
+## Configuration
+
+### Environment Variables
+
+- `DISCORD_TOKEN`: Your Discord bot token
+- `ALLOWED_ROLE_IDS`: Comma-separated list of Discord role IDs that can use the command
+- `CHROME_BIN`: Path to Chrome browser (default: /usr/bin/google-chrome)
+- `CHROMEDRIVER_PATH`: Path to ChromeDriver (default: /usr/local/bin/chromedriver)
+
+### Discord Setup
+
+1. Create a Discord application at [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a bot and get the token
+3. Enable required intents:
    - Message Content Intent
-6. Invite the bot to your server with the following permissions:
+4. Invite the bot to your server with required permissions:
    - Send Messages
-   - Embed Links
+   - Read Messages/View Channels
    - Use Slash Commands
 
 ## Usage
 
-The bot will automatically post tour dates every 24 hours to the specified channel. Users can also use the `/tour_dates` slash command to manually fetch the latest tour dates.
+1. Start the bot
+2. Use the `/tourdates` command in any channel where the bot has access
+3. Only users with the specified roles can use the command
+4. The bot will respond with formatted tour dates
 
-## Contributing
+## Error Handling
 
-Feel free to submit issues and enhancement requests! 
+- The bot includes retry mechanisms for failed scraping attempts
+- Failed commands show ephemeral error messages
+- Detailed logging is available in `goose_tour_dates.log`
+
+## Security
+
+- Role-based access control for commands
+- Ephemeral responses to prevent channel spam
+- Environment variable configuration for sensitive data
+- Secure handling of Discord tokens
+
+## Maintenance
+
+- Regular updates to Chrome and ChromeDriver may be required
+- Monitor the log file for any issues
+- Update role IDs in the environment variables as needed
+
+## Support
+
+For issues or questions, please contact the server administrators or create an issue in the repository. 
