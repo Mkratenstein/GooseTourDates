@@ -118,34 +118,20 @@ def get_formatted_tour_dates():
     # Sort dates chronologically using the first date for date ranges
     processed_dates.sort(key=lambda x: x['date'].split(" to ")[0])
     
-    # Create messages
+    # Create messages array
     messages = []
     
     # Add header message with total count
     header_message = f"**Goose Tour Dates**\nFound {len(processed_dates)} upcoming shows:"
     messages.append(header_message)
     
-    # Format all events
-    current_message = []
-    current_message.append("───")  # Add initial separator
-    
+    # Format each event as a separate message
     for event in processed_dates:
         try:
             event_text = format_event_output(event)
-            # Check if adding this event would exceed the limit
-            if len("\n".join(current_message) + "\n" + event_text + "\n───") > 1900:
-                # Send current message and start new one
-                messages.append("\n".join(current_message))
-                current_message = ["───", event_text, "───"]
-            else:
-                current_message.append(event_text)
-                current_message.append("───")
+            messages.append(event_text)
         except Exception as e:
             logger.error(f"Error formatting event: {e}")
             continue
-    
-    # Add the last message if it has content
-    if len(current_message) > 1:  # More than just the separator
-        messages.append("\n".join(current_message))
     
     return messages 

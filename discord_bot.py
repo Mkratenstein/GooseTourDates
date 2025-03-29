@@ -38,10 +38,13 @@ MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAY = 10
 WEBSOCKET_TIMEOUT = 30
 CONNECTION_TIMEOUT = ClientTimeout(total=30, connect=10)
+MESSAGE_RETRY_DELAY = 2  # Delay between message retries
+MESSAGE_SEND_DELAY = 1  # Delay between sending messages to avoid rate limits
 
 # Add connection state tracking
 connection_attempts = 0
 last_connection_time = 0
+is_reconnecting = False
 
 async def create_session():
     """Create a new aiohttp session with proper timeout settings."""
@@ -52,99 +55,92 @@ async def close_session(session):
     if not session.closed:
         await session.close()
 
+async def send_message_with_retry(interaction: discord.Interaction, message: str, max_retries: int = 3) -> bool:
+    """Send a message with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            if not bot.is_ready():
+                logger.warning("Bot not ready, waiting before retry...")
+                await asyncio.sleep(MESSAGE_RETRY_DELAY)
+                continue
+                
+            await interaction.followup.send(message, ephemeral=True)
+            return True
+        except discord.HTTPException as e:
+            if e.code == 50035:  # Message too long
+                logger.error("Message too long, splitting into chunks...")
+                # Split message into lines and send each line
+                lines = message.split("\n")
+                for line in lines:
+                    if not await send_message_with_retry(interaction, line):
+                        return False
+                return True
+            elif e.code == 10008:  # Unknown Channel
+                logger.error("Channel not found")
+                return False
+            elif e.code == 50001:  # Missing Access
+                logger.error("Missing permissions")
+                return False
+            elif e.code == 429:  # Rate limit
+                retry_after = e.retry_after
+                logger.warning(f"Rate limited. Waiting {retry_after} seconds...")
+                await asyncio.sleep(retry_after)
+                continue
+            else:
+                logger.error(f"HTTP Exception: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(MESSAGE_RETRY_DELAY)
+                    continue
+                return False
+        except discord.ConnectionClosed:
+            logger.error("Connection closed while sending message")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(MESSAGE_RETRY_DELAY)
+                continue
+            return False
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(MESSAGE_RETRY_DELAY)
+                continue
+            return False
+    return False
+
 async def send_monthly_messages(interaction: discord.Interaction, messages: list):
-    """Send multiple messages, one for each month."""
+    """Send multiple messages, one for each event."""
     try:
         # Send the header message first
-        await interaction.followup.send(messages[0], ephemeral=True)
+        if not await send_message_with_retry(interaction, messages[0]):
+            logger.error("Failed to send header message")
+            return
         
-        # Send each message
+        # Send each event message with a delay
         for message in messages[1:]:
-            # Split message into chunks if needed
-            if len(message) > 1900:  # Leave some buffer for formatting
-                # Split by event separator
-                events = message.split("───")
-                current_chunk = events[0]
-                
-                for event in events[1:]:
-                    event = "───" + event
-                    # Check if adding this event would exceed the limit
-                    if len(current_chunk + "\n" + event) > 1900:
-                        try:
-                            # Send current chunk
-                            await interaction.followup.send(current_chunk, ephemeral=True)
-                            # Start new chunk with the current event
-                            current_chunk = event
-                        except discord.HTTPException as e:
-                            if e.code == 50035:  # Message too long
-                                # Try to split the event itself
-                                event_lines = event.split("\n")
-                                current_chunk = event_lines[0]
-                                
-                                for line in event_lines[1:]:
-                                    if len(current_chunk + "\n" + line) > 1900:
-                                        await interaction.followup.send(current_chunk, ephemeral=True)
-                                        current_chunk = line
-                                    else:
-                                        current_chunk += "\n" + line
-                            else:
-                                raise  # Re-raise if it's a different error
-                    else:
-                        current_chunk += "\n" + event
-                
-                # Send any remaining content
-                if current_chunk:
-                    try:
-                        await interaction.followup.send(current_chunk, ephemeral=True)
-                    except discord.HTTPException as e:
-                        if e.code == 50035:  # Message too long
-                            # Split the remaining content into smaller chunks
-                            lines = current_chunk.split("\n")
-                            current_chunk = lines[0]
-                            
-                            for line in lines[1:]:
-                                if len(current_chunk + "\n" + line) > 1900:
-                                    await interaction.followup.send(current_chunk, ephemeral=True)
-                                    current_chunk = line
-                                else:
-                                    current_chunk += "\n" + line
-                            
-                            if current_chunk:
-                                await interaction.followup.send(current_chunk, ephemeral=True)
-                        else:
-                            raise  # Re-raise if it's a different error
-            else:
-                try:
-                    await interaction.followup.send(message, ephemeral=True)
-                except discord.HTTPException as e:
-                    if e.code == 50035:  # Message too long
-                        # Even though we checked the length, something might have changed
-                        # Split the message into smaller chunks
-                        lines = message.split("\n")
-                        current_chunk = lines[0]
-                        
-                        for line in lines[1:]:
-                            if len(current_chunk + "\n" + line) > 1900:
-                                await interaction.followup.send(current_chunk, ephemeral=True)
-                                current_chunk = line
-                            else:
-                                current_chunk += "\n" + line
-                        
-                        if current_chunk:
-                            await interaction.followup.send(current_chunk, ephemeral=True)
-                    else:
-                        raise  # Re-raise if it's a different error
+            if not bot.is_ready():
+                logger.warning("Bot disconnected while sending messages")
+                await interaction.followup.send(
+                    "Connection lost while sending messages. Please try again.",
+                    ephemeral=True
+                )
+                return
+            
+            # Add a small delay between messages to avoid rate limits
+            await asyncio.sleep(MESSAGE_SEND_DELAY)
+            
+            if not await send_message_with_retry(interaction, message):
+                logger.error("Failed to send event message")
+                return
                 
     except Exception as e:
         logger.error(f"Error sending messages: {e}")
         try:
-            await interaction.followup.send(
-                "An error occurred while sending the tour dates. Please try again later.",
-                ephemeral=True
-            )
+            if bot.is_ready():
+                await interaction.followup.send(
+                    "An error occurred while sending the tour dates. Please try again later.",
+                    ephemeral=True
+                )
         except:
             logger.error("Failed to send error message to user")
-        raise
 
 @bot.event
 async def on_ready():
@@ -172,7 +168,8 @@ async def on_ready():
 @bot.event
 async def on_disconnect():
     """Called when the bot disconnects from Discord."""
-    global connection_attempts
+    global connection_attempts, is_reconnecting
+    is_reconnecting = True
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
     
     for attempt in range(MAX_RECONNECT_ATTEMPTS):
@@ -205,6 +202,7 @@ async def on_disconnect():
                 async with asyncio.timeout(WEBSOCKET_TIMEOUT):
                     await bot.start(token)
                     logger.info("Successfully reconnected to Discord")
+                    is_reconnecting = False
                     return
             except asyncio.TimeoutError:
                 logger.error("Connection attempt timed out")
@@ -224,6 +222,7 @@ async def on_disconnect():
                 await asyncio.sleep(delay)
             else:
                 logger.error("Failed to reconnect after maximum attempts")
+                is_reconnecting = False
                 # Try to restart the entire bot
                 try:
                     await restart_bot()
@@ -275,14 +274,27 @@ async def on_error(event, *args, **kwargs):
 @bot.tree.command(name="tourdates", description="Get upcoming Goose tour dates")
 async def tour_dates(interaction: discord.Interaction):
     """Slash command to get tour dates."""
+    if is_reconnecting:
+        try:
+            await interaction.response.send_message(
+                "Bot is currently reconnecting. Please try again in a moment.",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send reconnecting message")
+        return
+        
     # Get allowed role IDs from environment variables
     role_ids_str = os.getenv('ALLOWED_ROLE_IDS', '')
     if not role_ids_str:
         logger.error("No allowed role IDs found in environment variables!")
-        await interaction.response.send_message(
-            "Configuration error: Allowed roles not set. Please contact an administrator.",
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                "Configuration error: Allowed roles not set. Please contact an administrator.",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send configuration error message")
         return
     
     try:
@@ -290,23 +302,33 @@ async def tour_dates(interaction: discord.Interaction):
         allowed_roles = [int(role_id.strip()) for role_id in role_ids_str.split(',')]
     except ValueError as e:
         logger.error(f"Error parsing role IDs: {e}")
-        await interaction.response.send_message(
-            "Configuration error: Invalid role ID format. Please contact an administrator.",
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                "Configuration error: Invalid role ID format. Please contact an administrator.",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send role ID error message")
         return
     
     # Check if user has required roles
     user_roles = [role.id for role in interaction.user.roles]
     
     if not any(role_id in user_roles for role_id in allowed_roles):
-        await interaction.response.send_message(
-            "You don't have permission to use this command. Required roles: Goose Tour Dates, Goose Tour Dates Admin",
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                "You don't have permission to use this command. Required roles: Goose Tour Dates, Goose Tour Dates Admin",
+                ephemeral=True
+            )
+        except:
+            logger.error("Failed to send permission error message")
         return
     
-    await interaction.response.defer(ephemeral=True)  # Make the response ephemeral
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except:
+        logger.error("Failed to defer interaction")
+        return
     
     try:
         # Get the tour dates grouped by month
@@ -318,10 +340,11 @@ async def tour_dates(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error in tour_dates command: {e}")
         try:
-            await interaction.followup.send(
-                "An error occurred while fetching tour dates. Please try again later.",
-                ephemeral=True
-            )
+            if bot.is_ready():
+                await interaction.followup.send(
+                    "An error occurred while fetching tour dates. Please try again later.",
+                    ephemeral=True
+                )
         except:
             logger.error("Failed to send error message to user")
 
