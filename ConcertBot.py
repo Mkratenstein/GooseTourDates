@@ -18,7 +18,27 @@ load_dotenv()
 # Bot setup with intents
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Configure the bot with rate limit handling
+bot = commands.Bot(
+    command_prefix='!',
+    intents=intents,
+    max_messages=None,  # Don't cache messages
+    chunk_guilds_at_startup=False,  # Don't chunk guilds on startup
+    heartbeat_timeout=60.0,  # Increase heartbeat timeout
+    guild_ready_timeout=10.0,  # Increase guild ready timeout
+    proxy=None,  # Don't use proxy
+    proxy_auth=None,  # No proxy auth
+    connector=None,  # Use default connector
+    http_trace=False,  # Disable HTTP tracing
+    http_adapter=None,  # Use default adapter
+    enable_debug_events=False,  # Disable debug events
+    http_trace_logger=None,  # No HTTP trace logger
+    max_retries=5,  # Maximum number of retries
+    retry_delay=1.0,  # Base delay between retries
+    retry_backoff=2.0,  # Exponential backoff factor
+    retry_jitter=0.1  # Add jitter to retries
+)
 
 # Get environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -417,48 +437,41 @@ if __name__ == "__main__":
     if not ANNOUNCEMENTS_CHANNEL_ID:
         raise ValueError("ANNOUNCEMENTS_CHANNEL_ID environment variable is not set")
     
+    # Create a single event loop for all attempts
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     # Add retry logic for bot startup with jitter
     for attempt in range(MAX_RETRIES):
         try:
             # Add initial delay with jitter before first attempt
             if attempt == 0:
-                initial_delay = random.uniform(120, 180)  # Even longer initial delay (2-3 minutes)
+                initial_delay = random.uniform(300, 600)  # Much longer initial delay (5-10 minutes)
                 print(f"Initial startup delay: {initial_delay:.2f} seconds")
                 time.sleep(initial_delay)
             else:
                 # Exponential backoff with jitter for subsequent attempts
-                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(60, 120), MAX_RETRY_DELAY)
+                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(120, 240), MAX_RETRY_DELAY)
                 print(f"Waiting {delay:.2f} seconds before next attempt...")
                 time.sleep(delay)
             
             print(f"Attempting to start bot (attempt {attempt + 1}/{MAX_RETRIES})")
             
-            # Create a new event loop for each attempt
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             try:
-                # Start the bot with a timeout
-                loop.run_until_complete(asyncio.wait_for(bot.start(DISCORD_TOKEN), timeout=30))
+                # Start the bot with a timeout and proper cleanup
+                loop.run_until_complete(asyncio.wait_for(bot.start(DISCORD_TOKEN), timeout=60))
                 print("Bot started successfully!")
                 break
             except asyncio.TimeoutError:
                 print("Bot startup timed out")
-                loop.close()
                 if attempt == MAX_RETRIES - 1:
                     raise
                 continue
             except Exception as e:
                 print(f"Error during bot startup: {e}")
-                loop.close()
                 if attempt == MAX_RETRIES - 1:
                     raise
                 continue
-            finally:
-                try:
-                    loop.close()
-                except:
-                    pass
                 
         except discord.HTTPException as e:
             if e.code == 429 and attempt < MAX_RETRIES - 1:
@@ -470,3 +483,20 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Unexpected error: {e}")
             sys.exit(1)
+        finally:
+            # Clean up any pending tasks
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except:
+                pass
+    
+    # Keep the event loop running
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("Shutting down...")
+    finally:
+        loop.close()
