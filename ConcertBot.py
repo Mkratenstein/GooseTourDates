@@ -49,6 +49,8 @@ def setup_driver():
         chrome_options.add_argument('--remote-debugging-port=9222')
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument('--ignore-certificate-errors')
+        chrome_options.add_argument('--allow-running-insecure-content')
         chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
@@ -63,7 +65,7 @@ def setup_driver():
         # Create service with specific ChromeDriver path
         service = Service('/usr/local/bin/chromedriver')
         
-        # Create driver
+        # Create driver with service and options
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         # Set window size
