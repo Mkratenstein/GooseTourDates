@@ -176,7 +176,11 @@ def get_tour_dates():
     try:
         print("Fetching tour dates from website...")
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         response = requests.get(url, headers=headers)
         response.raise_for_status()
@@ -186,40 +190,65 @@ def get_tour_dates():
         print("Successfully parsed HTML")
         
         tour_dates = []
-        # Look for tour dates in the main content area
-        events = soup.find_all('div', class_='event')
-        print(f"Found {len(events)} event elements")
+        
+        # First try to find the tour dates section
+        tour_section = soup.find('section', class_='tour-dates') or soup.find('div', class_='tour-dates')
+        if not tour_section:
+            print("Could not find tour dates section")
+            return None
+            
+        # Look for individual tour date entries
+        events = tour_section.find_all(['div', 'li'], class_=['tour-date', 'event', 'tour-event'])
+        print(f"Found {len(events)} potential tour date elements")
         
         for event in events:
             try:
-                # Try different possible selectors for date
+                # Try to find the date
                 date_elem = (
                     event.find('div', class_='date') or 
                     event.find('div', class_='event-date') or
-                    event.find('span', class_='date')
+                    event.find('span', class_='date') or
+                    event.find('time') or
+                    event.find('div', class_='tour-date-date')
                 )
                 
-                # Try different possible selectors for venue
+                # Try to find the venue
                 venue_elem = (
                     event.find('div', class_='venue') or 
                     event.find('div', class_='event-venue') or
-                    event.find('span', class_='venue')
+                    event.find('span', class_='venue') or
+                    event.find('div', class_='tour-date-venue')
                 )
                 
-                # Try different possible selectors for location
+                # Try to find the location
                 location_elem = (
                     event.find('div', class_='location') or 
                     event.find('div', class_='event-location') or
-                    event.find('span', class_='location')
+                    event.find('span', class_='location') or
+                    event.find('div', class_='tour-date-location')
                 )
                 
+                # If we can't find elements by class, try to find them by text structure
                 if not all([date_elem, venue_elem, location_elem]):
-                    print("Missing required elements in event")
-                    continue
+                    text_content = event.get_text(separator='\n').strip()
+                    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+                    
+                    if len(lines) >= 3:
+                        date_text = lines[0]
+                        venue_text = lines[1]
+                        location_text = lines[2]
+                    else:
+                        print("Could not find required information in event text")
+                        continue
+                else:
+                    date_text = date_elem.text.strip()
+                    venue_text = venue_elem.text.strip()
+                    location_text = location_elem.text.strip()
                 
-                date_text = date_elem.text.strip()
-                venue_text = venue_elem.text.strip()
-                location_text = location_elem.text.strip()
+                # Clean up the text
+                date_text = ' '.join(date_text.split())
+                venue_text = ' '.join(venue_text.split())
+                location_text = ' '.join(location_text.split())
                 
                 print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
                 
@@ -231,34 +260,6 @@ def get_tour_dates():
             except Exception as e:
                 print(f"Error processing event: {e}")
                 continue
-        
-        if not tour_dates:
-            # Try alternative selectors if no events found
-            print("No tour dates found with primary selectors, trying alternatives...")
-            events = soup.find_all(['div', 'li'], class_=['tour-date', 'event-item', 'tour-event'])
-            print(f"Found {len(events)} alternative event elements")
-            
-            for event in events:
-                try:
-                    # Try to find date, venue, and location in the text content
-                    text_content = event.get_text(separator='\n').strip()
-                    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-                    
-                    if len(lines) >= 3:
-                        date_text = lines[0]
-                        venue_text = lines[1]
-                        location_text = lines[2]
-                        
-                        print(f"Found tour date: {date_text} at {venue_text} in {location_text}")
-                        
-                        tour_dates.append({
-                            'date': date_text,
-                            'venue': venue_text,
-                            'location': location_text
-                        })
-                except Exception as e:
-                    print(f"Error processing alternative event: {e}")
-                    continue
         
         if not tour_dates:
             print("No tour dates found in the parsed HTML")
