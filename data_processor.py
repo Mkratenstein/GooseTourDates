@@ -92,17 +92,28 @@ def format_event_output(event):
         # Format ticket links more compactly
         ticket_lines = []
         current_line = "🎫 "
-        for link in event['ticketLinks'].split("; "):
-            if link.strip():  # Only process non-empty links
-                # Remove any "tickets:" prefix from the link text
-                link = link.replace("tickets:", "").strip()
-                if len(current_line + link) > 80:  # Reasonable line length
-                    ticket_lines.append(current_line)
-                    current_line = "  " + link
-                else:
-                    current_line += "; " + link
-        ticket_lines.append(current_line)
-        output_lines.extend(ticket_lines)
+        
+        # Split ticket links and clean them up
+        links = [link.strip() for link in event['ticketLinks'].split(";") if link.strip()]
+        
+        # Filter out VIP and Package tickets
+        standard_links = []
+        for link in links:
+            # Skip VIP and Package tickets
+            if any(keyword in link.lower() for keyword in ["vip", "package"]):
+                continue
+            standard_links.append(link)
+        
+        if standard_links:
+            # Add the first standard ticket link
+            current_line += standard_links[0]
+            ticket_lines.append(current_line)
+            
+            # Add any additional standard ticket links on new lines
+            for link in standard_links[1:]:
+                ticket_lines.append("  " + link)
+            
+            output_lines.extend(ticket_lines)
     
     # Join with single newlines for better spacing
     return "\n".join(output_lines)
