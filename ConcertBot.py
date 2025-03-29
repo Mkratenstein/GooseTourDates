@@ -264,74 +264,25 @@ if __name__ == "__main__":
     if not ANNOUNCEMENTS_CHANNEL_ID:
         raise ValueError("ANNOUNCEMENTS_CHANNEL_ID environment variable is not set")
     
-    # Create a single event loop for all attempts
+    # Create event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    # Add retry logic for bot startup with jitter
-    for attempt in range(MAX_RETRIES):
-        try:
-            # Add initial delay with jitter before first attempt
-            if attempt == 0:
-                initial_delay = random.uniform(300, 600)  # Much longer initial delay (5-10 minutes)
-                print(f"Initial startup delay: {initial_delay:.2f} seconds")
-                time.sleep(initial_delay)
-            else:
-                # Exponential backoff with jitter for subsequent attempts
-                delay = min(INITIAL_RETRY_DELAY * (2 ** attempt) + random.uniform(120, 240), MAX_RETRY_DELAY)
-                print(f"Waiting {delay:.2f} seconds before next attempt...")
-                time.sleep(delay)
-            
-            print(f"Attempting to start bot (attempt {attempt + 1}/{MAX_RETRIES})")
-            
-            try:
-                # Start the bot with a timeout and proper cleanup
-                loop.run_until_complete(asyncio.wait_for(bot.start(DISCORD_TOKEN), timeout=60))
-                print("Bot started successfully!")
-                break
-            except asyncio.TimeoutError:
-                print("Bot startup timed out")
-                if attempt == MAX_RETRIES - 1:
-                    raise
-                continue
-            except Exception as e:
-                print(f"Error during bot startup: {e}")
-                if attempt == MAX_RETRIES - 1:
-                    raise
-                continue
-                
-        except discord.HTTPException as e:
-            if e.code == 429 and attempt < MAX_RETRIES - 1:
-                print(f"Rate limited on startup. Will retry with exponential backoff.")
-                continue
-            else:
-                print(f"Failed to start bot after {MAX_RETRIES} attempts")
-                sys.exit(1)
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            sys.exit(1)
-        finally:
-            # Clean up any pending tasks and client session
-            try:
-                if hasattr(bot, '_connection') and bot._connection:
-                    loop.run_until_complete(bot._connection.close())
-                pending = asyncio.all_tasks(loop)
-                for task in pending:
-                    task.cancel()
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            except Exception as e:
-                print(f"Error during cleanup: {e}")
-    
-    # Keep the event loop running
     try:
+        print("Starting bot...")
+        loop.run_until_complete(bot.start(DISCORD_TOKEN))
+        print("Bot started successfully!")
         loop.run_forever()
     except KeyboardInterrupt:
         print("Shutting down...")
+    except Exception as e:
+        print(f"Error starting bot: {e}")
+        sys.exit(1)
     finally:
-        # Final cleanup
+        # Cleanup
         try:
             if hasattr(bot, '_connection') and bot._connection:
                 loop.run_until_complete(bot._connection.close())
             loop.close()
         except Exception as e:
-            print(f"Error during final cleanup: {e}")
+            print(f"Error during cleanup: {e}")
