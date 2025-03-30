@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 import pytz
 from data_processor import format_event_output, get_tour_dates
+import discord
+import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -100,16 +102,40 @@ async def announce_new_events(bot):
         # Check for new events
         new_events = check_for_new_events()
         
-        # Announce each new event
+        # Announce each new event with retry logic
         for event in new_events:
-            try:
-                announcement = format_new_event_announcement(event)
-                if announcement:
-                    await channel.send(announcement)
-                    logger.info(f"Announced new event: {event['date']} at {event['venue']}")
-            except Exception as e:
-                logger.error(f"Error announcing event: {e}")
-                continue
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    announcement = format_new_event_announcement(event)
+                    if announcement:
+                        await channel.send(announcement)
+                        logger.info(f"Announced new event: {event['date']} at {event['venue']}")
+                        break  # Success, exit retry loop
+                except discord.Forbidden:
+                    logger.error(f"Bot lacks permission to send messages in channel {channel_id}")
+                    # Don't retry on permission errors
+                    break
+                except discord.HTTPException as e:
+                    if e.code == 429:  # Rate limit
+                        retry_after = e.retry_after
+                        logger.warning(f"Rate limited. Waiting {retry_after} seconds...")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    else:
+                        logger.error(f"HTTP error announcing event: {e}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        break
+                except Exception as e:
+                    logger.error(f"Error announcing event: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    break
                 
     except Exception as e:
         logger.error(f"Error in announce_new_events: {e}") 

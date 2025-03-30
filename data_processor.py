@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 def process_date(date_str):
     """Process a date string and return a standardized format."""
     try:
+        # Convert to title case for consistent formatting
+        date_str = date_str.title()
+        
         # Check if it's a date range
         if " - " in date_str:
             start_date, end_date = date_str.split(" - ")
