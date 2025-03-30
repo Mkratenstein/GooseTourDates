@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime
 import pytz
-from data_processor import format_event_output, get_tour_dates
+from data_processor import format_event_output, get_tour_dates, process_date
 import discord
 import asyncio
 
@@ -38,6 +38,21 @@ def save_previous_events(events):
     except Exception as e:
         logger.error(f"Error saving previous events: {e}")
 
+def process_events(events):
+    """Process all events to ensure consistent date formatting."""
+    processed_events = []
+    for event in events:
+        try:
+            # Create a copy of the event to avoid modifying the original
+            processed_event = event.copy()
+            # Process the date
+            processed_event['date'] = process_date(event['date'])
+            processed_events.append(processed_event)
+        except Exception as e:
+            logger.error(f"Error processing event: {e}")
+            continue
+    return processed_events
+
 def check_for_new_events():
     """Check for new events by comparing current events with previously seen events."""
     try:
@@ -46,6 +61,9 @@ def check_for_new_events():
         if not current_events:
             logger.error("Failed to get current events")
             return []
+
+        # Process current events to ensure consistent date formatting
+        current_events = process_events(current_events)
 
         # Get previous events
         previous_events = load_previous_events()
