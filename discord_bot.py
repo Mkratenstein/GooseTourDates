@@ -4,9 +4,10 @@ import logging
 import asyncio
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from data_processor import get_formatted_tour_dates, get_tour_dates
+from event_monitor import announce_new_events
 import aiohttp
 from aiohttp import ClientTimeout
 from concurrent.futures import ThreadPoolExecutor
@@ -54,6 +55,22 @@ VALID_MONTHS = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
+
+# Event monitoring settings
+EVENT_CHECK_INTERVAL = 3600  # Check for new events every hour
+
+@tasks.loop(seconds=EVENT_CHECK_INTERVAL)
+async def check_new_events():
+    """Periodically check for new events."""
+    try:
+        await announce_new_events(bot)
+    except Exception as e:
+        logger.error(f"Error in check_new_events: {e}")
+
+@check_new_events.before_loop
+async def before_check_new_events():
+    """Wait for the bot to be ready before starting the event check loop."""
+    await bot.wait_until_ready()
 
 async def run_in_executor(func, *args):
     """Run a function in the thread pool executor."""
@@ -296,6 +313,10 @@ async def on_ready():
     
     # Run initial scrape
     await initial_scrape()
+    
+    # Start the event monitoring task
+    check_new_events.start()
+    logger.info("Started event monitoring task")
 
 @bot.event
 async def on_disconnect():

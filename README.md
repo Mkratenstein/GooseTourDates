@@ -1,140 +1,100 @@
-# Goose Tour Dates Discord Bot
+# Goose Concerts Bot
 
-A Discord bot that provides information about upcoming Goose concert tour dates. The bot scrapes tour information from Goose's official website and provides it through Discord slash commands.
+A Discord bot that tracks and announces Goose concert tour dates. The bot provides real-time updates about new shows and allows users to query upcoming tour dates by month.
 
 ## Features
 
-- `/tourdates` command to view upcoming tour dates
-- Optional month filtering for tour dates
-- Automatic caching of tour data (24-hour cache)
-- Role-based access control
-- Robust error handling and connection management
-- Automatic reconnection on disconnection
-- Rate limit handling for Discord API
+- **Tour Date Tracking**: Automatically monitors Goose's tour page for new shows
+- **Smart Caching System**: 
+  - Updates every hour during business hours (10 AM - 5 PM ET, weekdays)
+  - Updates every 4 hours during off-hours (5 PM - 10 AM ET and weekends)
+  - Reduces load on the website while maintaining data freshness
+- **Discord Commands**:
+  - `/tourdates`: Shows all available months with tour dates
+  - `/tourdates [month]`: Shows all tour dates for a specific month
+- **Event Announcements**: Automatically announces new shows in a designated channel
+- **Ticket Link Filtering**: Automatically filters out VIP and Package tickets
+- **Role-Based Access**: Only users with specific roles can use the bot commands
 
-## Prerequisites
+## Setup
 
-- Python 3.12 or higher
-- Discord Bot Token
-- Chrome/Chromium browser (for web scraping)
-- ChromeDriver (matching Chrome version)
-
-## Environment Variables
-
-Create a `.env` file with the following variables:
-
-```env
-DISCORD_TOKEN=your_discord_bot_token
-CHANNEL_ID=your_channel_id
-ANNOUNCEMENTS_CHANNEL_ID=your_announcements_channel_id
-ALLOWED_ROLE_IDS=role_id1,role_id2
-
-# Chrome Configuration
-CHROME_BIN=/usr/bin/google-chrome
-CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
-
-# Python Configuration
-PYTHONUNBUFFERED=1
-PYTHONIOENCODING=utf-8
-
-# Data Directory
-RAILWAY_DATA_DIR=/data
-```
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/goose-tour-dates-bot.git
-cd goose-tour-dates-bot
-```
-
+1. Clone the repository
 2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Set up your environment variables in `.env`
-
-4. Run the bot:
-```bash
-python discord_bot.py
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Create a `.env` file with the following variables:
+   ```
+   DISCORD_TOKEN=your_discord_token
+   CHANNEL_ID=your_channel_id
+   ANNOUNCEMENTS_CHANNEL_ID=your_announcements_channel_id
+   ALLOWED_ROLE_IDS=role_id1,role_id2
+   ```
 
 ## Docker Deployment
 
-1. Build the Docker image:
+The bot can be deployed using Docker:
+
 ```bash
-docker build -t goose-tour-dates-bot .
+docker build -t goose-concerts-bot .
+docker run -d --env-file .env goose-concerts-bot
 ```
 
-2. Run the container:
-```bash
-docker run -d \
-  --name goose-tour-dates-bot \
-  --env-file .env \
-  goose-tour-dates-bot
+## Cache System
+
+The bot implements a smart caching system that adapts to the time of day:
+
+- **Business Hours (10 AM - 5 PM ET, weekdays)**:
+  - Cache expires every hour
+  - More frequent updates to catch new shows quickly
+  - Ideal for peak announcement times
+
+- **Off Hours (5 PM - 10 AM ET and weekends)**:
+  - Cache expires every 4 hours
+  - Reduced load on the website
+  - Still maintains reasonable data freshness
+
+## Event Monitoring
+
+The bot checks for new events:
+- Every 30 minutes during business hours
+- Every hour during off-hours
+- Automatically announces new shows in the designated announcements channel
+
+## Output Format
+
+Tour dates are displayed in a clean, readable format:
+```
+**September 17, 2025**
+Kohl Center | Madison, WI
+*Goose & Mt. Joy*
+🎫 https://ticket-link.com
 ```
 
-## Railway Deployment
+## Dependencies
 
-1. Push your code to GitHub
-2. Connect your repository to Railway
-3. Set up the environment variables in Railway
-4. Deploy using the provided Dockerfile
-
-## Usage
-
-### Commands
-
-- `/tourdates` - Get all upcoming tour dates
-- `/tourdates [month]` - Get tour dates for a specific month
-
-### Permissions
-
-Users must have one of the following roles to use the bot:
-- Goose Tour Dates
-- Goose Tour Dates Admin
+- discord.py: Discord API interaction
+- selenium: Web scraping
+- python-dotenv: Environment variable management
+- pytz: Timezone handling
+- pandas: Data processing
+- aiohttp: Async HTTP client
+- python-dateutil: Date handling
 
 ## Error Handling
 
 The bot includes comprehensive error handling for:
-- Discord API rate limits
-- Connection issues
-- Web scraping failures
-- Invalid user input
+- Network issues
+- Website changes
+- Rate limiting
+- Invalid dates
+- Missing data
 - Permission issues
 
 ## Logging
 
-Logs are written to `goose_tour_dates.log` and include:
-- Bot startup and shutdown
-- Command usage
-- Error messages
-- Cache operations
-- Scraping operations
-
-## Cache System
-
-- Tour dates are cached for 24 hours
-- Cache is stored in `data/tour_dates_cache.json`
-- Cache is automatically refreshed when expired
-- Initial scrape occurs on bot startup
+All operations are logged to `goose_tour_dates.log` for monitoring and debugging.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Goose for providing tour information
-- Discord.py for the Discord API wrapper
-- Selenium for web scraping capabilities
+Feel free to submit issues and enhancement requests!
