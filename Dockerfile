@@ -42,6 +42,7 @@ COPY scraper.py .
 COPY data_processor.py .
 COPY cache_manager.py .
 COPY discord_bot.py .
+COPY event_monitor.py .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

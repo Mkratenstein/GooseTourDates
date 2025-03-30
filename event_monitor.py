@@ -2,8 +2,8 @@ import os
 import json
 import logging
 from datetime import datetime
-import discord
-from data_processor import format_event_output
+import pytz
+from data_processor import format_event_output, get_tour_dates
 
 # Configure logging
 logging.basicConfig(
@@ -14,7 +14,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # File paths
-CACHE_FILE = os.path.join(os.getenv('RAILWAY_DATA_DIR', 'data'), 'tour_dates_cache.json')
 PREVIOUS_EVENTS_FILE = os.path.join(os.getenv('RAILWAY_DATA_DIR', 'data'), 'previous_events.json')
 
 def load_previous_events():
@@ -29,7 +28,7 @@ def load_previous_events():
         return []
 
 def save_previous_events(events):
-    """Save the list of previously seen events."""
+    """Save the current list of events for future comparison."""
     try:
         os.makedirs(os.path.dirname(PREVIOUS_EVENTS_FILE), exist_ok=True)
         with open(PREVIOUS_EVENTS_FILE, 'w') as f:
@@ -37,35 +36,39 @@ def save_previous_events(events):
     except Exception as e:
         logger.error(f"Error saving previous events: {e}")
 
-def get_event_identifier(event):
-    """Create a unique identifier for an event."""
-    return f"{event['date']}_{event['venue']}_{event['location']}"
-
 def check_for_new_events():
-    """Check for new events and return a list of new events."""
+    """Check for new events by comparing current events with previously seen events."""
     try:
-        # Load current events from cache
-        if not os.path.exists(CACHE_FILE):
-            logger.warning("Cache file not found")
+        # Get current events
+        current_events = get_tour_dates()
+        if not current_events:
+            logger.error("Failed to get current events")
             return []
 
-        with open(CACHE_FILE, 'r') as f:
-            cache_data = json.load(f)
-            current_events = cache_data.get('tour_dates', [])
-
-        # Load previous events
+        # Get previous events
         previous_events = load_previous_events()
         
-        # Find new events
-        new_events = []
-        for event in current_events:
-            event_id = get_event_identifier(event)
-            if event_id not in previous_events:
-                new_events.append(event)
-                previous_events.append(event_id)
+        # Create unique identifiers for current events
+        current_event_ids = {
+            f"{event['date']}_{event['venue']}_{event['location']}"
+            for event in current_events
+        }
         
-        # Save updated previous events
-        save_previous_events(previous_events)
+        # Create unique identifiers for previous events
+        previous_event_ids = {
+            f"{event['date']}_{event['venue']}_{event['location']}"
+            for event in previous_events
+        }
+        
+        # Find new events
+        new_event_ids = current_event_ids - previous_event_ids
+        new_events = [
+            event for event in current_events
+            if f"{event['date']}_{event['venue']}_{event['location']}" in new_event_ids
+        ]
+        
+        # Save current events as previous events for next check
+        save_previous_events(current_events)
         
         return new_events
     except Exception as e:
@@ -73,31 +76,27 @@ def check_for_new_events():
         return []
 
 def format_new_event_announcement(event):
-    """Format a new event announcement message."""
-    # Get the standard event formatting
-    event_text = format_event_output(event)
-    
-    # Add the announcement header
-    announcement = "**Goose the Organization has announced a new show!**\n\n"
-    announcement += event_text
-    
-    return announcement
+    """Format the announcement message for a new event."""
+    try:
+        announcement = "**Goose the Organization has announced a new show!**\n\n"
+        announcement += format_event_output(event)
+        return announcement
+    except Exception as e:
+        logger.error(f"Error formatting announcement: {e}")
+        return None
 
 async def announce_new_events(bot):
-    """Check for and announce new events in Discord."""
+    """Check for and announce any new events."""
     try:
         # Get the announcements channel ID from environment variables
         channel_id = int(os.getenv('ANNOUNCEMENTS_CHANNEL_ID', '859536104570486805'))
-        if not channel_id:
-            logger.error("No announcements channel ID found in environment variables")
-            return
-
+        
         # Get the channel
         channel = bot.get_channel(channel_id)
         if not channel:
             logger.error(f"Could not find announcements channel with ID {channel_id}")
             return
-
+        
         # Check for new events
         new_events = check_for_new_events()
         
@@ -105,11 +104,12 @@ async def announce_new_events(bot):
         for event in new_events:
             try:
                 announcement = format_new_event_announcement(event)
-                await channel.send(announcement)
-                logger.info(f"Announced new event: {event['date']} at {event['venue']}")
+                if announcement:
+                    await channel.send(announcement)
+                    logger.info(f"Announced new event: {event['date']} at {event['venue']}")
             except Exception as e:
                 logger.error(f"Error announcing event: {e}")
                 continue
-
+                
     except Exception as e:
         logger.error(f"Error in announce_new_events: {e}") 
