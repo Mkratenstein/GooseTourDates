@@ -185,6 +185,11 @@ async def send_monthly_messages(interaction: discord.Interaction, messages: list
 async def handle_disconnect():
     """Handle bot disconnection and reconnection."""
     global connection_attempts, is_reconnecting, session
+    if is_reconnecting:  # Prevent multiple simultaneous reconnection attempts
+        logger.warning("Reconnection already in progress, skipping...")
+        return
+        
+    is_reconnecting = True
     logger.warning("Bot disconnected from Discord. Attempting to reconnect...")
     
     # Close existing session if it exists
@@ -215,6 +220,7 @@ async def handle_disconnect():
             token = os.getenv('DISCORD_TOKEN')
             if not token:
                 logger.error("No Discord token found in environment variables!")
+                is_reconnecting = False
                 return
             
             # Create a new session with proper timeout
@@ -251,6 +257,12 @@ async def handle_disconnect():
 
 async def restart_bot():
     """Restart the entire bot process."""
+    global is_reconnecting
+    if is_reconnecting:  # Prevent multiple simultaneous restart attempts
+        logger.warning("Bot restart already in progress, skipping...")
+        return
+        
+    is_reconnecting = True
     logger.info("Attempting to restart the bot...")
     try:
         # Close the current session
@@ -264,6 +276,7 @@ async def restart_bot():
         token = os.getenv('DISCORD_TOKEN')
         if not token:
             logger.error("No Discord token found in environment variables!")
+            is_reconnecting = False
             return
         
         # Start a new session with timeout
@@ -271,15 +284,19 @@ async def restart_bot():
             async with asyncio.timeout(WEBSOCKET_TIMEOUT):
                 await bot.start(token)
                 logger.info("Bot successfully restarted")
+                is_reconnecting = False
         except asyncio.TimeoutError:
             logger.error("Bot restart timed out")
+            is_reconnecting = False
             raise
         except aiohttp.ClientError as e:
             logger.error(f"Bot restart connection error: {e}")
+            is_reconnecting = False
             raise
         
     except Exception as e:
         logger.error(f"Failed to restart bot: {e}")
+        is_reconnecting = False
         raise
 
 @bot.event
