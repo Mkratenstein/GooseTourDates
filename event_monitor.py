@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from data_processor import format_event_output, get_tour_dates, process_date
 import discord
@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 # File paths
 PREVIOUS_EVENTS_FILE = os.path.join(os.getenv('RAILWAY_DATA_DIR', 'data'), 'previous_events.json')
+
+# Constants
+MAX_MESSAGE_HISTORY = 100  # Maximum number of messages to check in history
+ANNOUNCEMENT_PREFIX = "**Goose the Organization has announced a new show!**"
 
 def load_previous_events():
     """Load the list of previously seen events."""
@@ -53,6 +57,67 @@ def process_events(events):
             continue
     return processed_events
 
+async def get_announced_events_from_discord(bot, channel_id):
+    """Get a list of events that have already been announced by checking Discord message history."""
+    try:
+        # Get the channel
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            logger.error(f"Could not find announcements channel with ID {channel_id}")
+            return []
+        
+        # Get message history
+        announced_events = []
+        try:
+            async for message in channel.history(limit=MAX_MESSAGE_HISTORY):
+                # Check if this is an announcement message
+                if message.content.startswith(ANNOUNCEMENT_PREFIX):
+                    # Extract event details from the message
+                    content = message.content
+                    lines = content.split('\n')
+                    
+                    # Skip the announcement header
+                    if len(lines) < 2:
+                        continue
+                    
+                    # Extract date (format: **Month Day, Year**)
+                    date_line = lines[1]
+                    if not date_line.startswith('**') or not date_line.endswith('**'):
+                        continue
+                    
+                    date_str = date_line.strip('*')
+                    
+                    # Extract venue and location (format: Venue | Location)
+                    if len(lines) < 3:
+                        continue
+                    
+                    venue_location = lines[2].split(' | ')
+                    if len(venue_location) != 2:
+                        continue
+                    
+                    venue = venue_location[0]
+                    location = venue_location[1]
+                    
+                    # Create event object
+                    event = {
+                        'date': date_str,
+                        'venue': venue,
+                        'location': location,
+                        'announced_at': message.created_at.isoformat()
+                    }
+                    
+                    announced_events.append(event)
+        except discord.Forbidden:
+            logger.error(f"Bot lacks permission to read message history in channel {channel_id}")
+        except Exception as e:
+            logger.error(f"Error reading message history: {e}")
+        
+        logger.info(f"Found {len(announced_events)} previously announced events in Discord history")
+        return announced_events
+    except Exception as e:
+        logger.error(f"Error getting announced events from Discord: {e}")
+        return []
+
 def check_for_new_events():
     """Check for new events by comparing current events with previously seen events."""
     try:
@@ -80,17 +145,24 @@ def check_for_new_events():
             for event in previous_events
         }
         
-        # Find new events
+        # Find new events (events that weren't in previous events)
         new_event_ids = current_event_ids - previous_event_ids
-        new_events = [
+        
+        # Get the actual events to announce
+        events_to_announce = [
             event for event in current_events
             if f"{event['date']}_{event['venue']}_{event['location']}" in new_event_ids
         ]
         
+        # Add timestamp to each event to be announced
+        current_time = datetime.now().isoformat()
+        for event in events_to_announce:
+            event['announced_at'] = current_time
+        
         # Save current events as previous events for next check
         save_previous_events(current_events)
         
-        return new_events
+        return events_to_announce
     except Exception as e:
         logger.error(f"Error checking for new events: {e}")
         return []
@@ -117,11 +189,41 @@ async def announce_new_events(bot):
             logger.error(f"Could not find announcements channel with ID {channel_id}")
             return
         
-        # Check for new events
-        new_events = check_for_new_events()
+        # Get previously announced events from Discord
+        announced_events = await get_announced_events_from_discord(bot, channel_id)
+        
+        # Get current events
+        current_events = get_tour_dates()
+        if not current_events:
+            logger.error("Failed to get current events")
+            return
+        
+        # Process current events
+        current_events = process_events(current_events)
+        
+        # Create unique identifiers for current events
+        current_event_ids = {
+            f"{event['date']}_{event['venue']}_{event['location']}"
+            for event in current_events
+        }
+        
+        # Create unique identifiers for announced events
+        announced_event_ids = {
+            f"{event['date']}_{event['venue']}_{event['location']}"
+            for event in announced_events
+        }
+        
+        # Find events that haven't been announced yet
+        unannounced_event_ids = current_event_ids - announced_event_ids
+        
+        # Get the actual events to announce
+        events_to_announce = [
+            event for event in current_events
+            if f"{event['date']}_{event['venue']}_{event['location']}" in unannounced_event_ids
+        ]
         
         # Announce each new event with retry logic
-        for event in new_events:
+        for event in events_to_announce:
             max_retries = 3
             retry_delay = 2
             

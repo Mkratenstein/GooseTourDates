@@ -18,15 +18,21 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s',
+    format='[%(asctime)s] [%(levelname)-8s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
     force=True
 )
 logger = logging.getLogger(__name__)
 
 # Add a file handler for debugging
 file_handler = logging.FileHandler('goose_tour_dates.log')
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+file_handler.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)-8s] %(name)s: %(message)s'))
 logger.addHandler(file_handler)
+
+# Add console handler with color
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(console_handler)
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -81,8 +87,14 @@ async def initial_scrape():
     """Run initial scrape on bot startup."""
     try:
         logger.info("Running initial tour dates scrape...")
-        await run_in_executor(get_tour_dates)
-        logger.info("Initial scrape completed successfully")
+        # Get tour dates but don't announce them
+        tour_dates = await run_in_executor(get_tour_dates)
+        
+        if tour_dates:
+            logger.info(f"Initial scrape found {len(tour_dates)} tour dates")
+            logger.info("Initial scrape completed successfully")
+        else:
+            logger.warning("Initial scrape found no tour dates")
     except Exception as e:
         logger.error(f"Error during initial scrape: {e}")
 
@@ -331,7 +343,8 @@ async def on_ready():
     # Run initial scrape
     await initial_scrape()
     
-    # Start the event monitoring task
+    # Start the event monitoring task with a delay to prevent immediate announcements
+    await asyncio.sleep(60)  # Wait 60 seconds before starting event monitoring
     check_new_events.start()
     logger.info("Started event monitoring task")
 
