@@ -32,6 +32,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
+# Install our package in development mode
+RUN pip install -e .
+
 # Set environment variables for Selenium
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
