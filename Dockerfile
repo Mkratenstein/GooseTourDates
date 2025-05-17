@@ -37,6 +37,7 @@ RUN pip install -e .
 
 # Set up ChromeDriver directory and permissions
 RUN mkdir -p /root/.wdm/drivers/chromedriver/linux64 \
+    && mkdir -p /root/.cache/selenium \
     && chmod -R 777 /root/.wdm \
     && chmod -R 777 /root/.cache
 
@@ -44,6 +45,8 @@ RUN mkdir -p /root/.wdm/drivers/chromedriver/linux64 \
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
 ENV PYTHONPATH=/app
+ENV WDM_LOCAL_CACHE=1
+ENV WDM_SSL_VERIFY=0
 
 # Command to run the application
 CMD ["python", "scraper/discord_bot.py"] 
