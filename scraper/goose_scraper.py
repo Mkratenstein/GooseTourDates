@@ -1,5 +1,15 @@
 """
 Goose Tour Scraper - Scrapes tour dates from goosetheband.com/tour
+
+This module provides functionality for:
+- Scraping concert dates and details from goosetheband.com
+- Generating unique event IDs for concerts
+- Parsing date ranges and concert information
+- Saving concert data to JSON and CSV formats
+- Error handling and logging
+
+The scraper uses Selenium WebDriver to handle dynamic content loading
+and JavaScript execution on the tour page.
 """
 
 import os
@@ -21,9 +31,33 @@ from scraper.reporting import ScraperReporter
 print('[DEBUG] Starting goose_scraper.py')
 
 class GooseTourScraper:
+    """
+    Scrapes tour dates and details from goosetheband.com/tour.
+    
+    This class handles:
+    - Web scraping using Selenium WebDriver
+    - Date parsing and validation
+    - Event ID generation
+    - Data storage in JSON and CSV formats
+    - Error handling and logging
+    
+    Attributes:
+        url (str): URL of the tour page to scrape
+        chrome_options (Options): Chrome WebDriver options
+        data_dir (Path): Directory for storing scraped data
+        reporter (ScraperReporter): Reporter instance for logging
+    """
+    
     def __init__(self):
+        """
+        Initialize the scraper with Chrome options and directories.
+        
+        Sets up:
+        - Chrome WebDriver options
+        - Data directory structure
+        - Reporter for logging
+        """
         print('[DEBUG] Initializing GooseTourScraper...')
-        """Initialize the scraper with Chrome options."""
         self.url = "https://goosetheband.com/tour"
         self.chrome_options = Options()
         # self.chrome_options.add_argument("--headless")  # Commented out for debugging
@@ -34,12 +68,30 @@ class GooseTourScraper:
         self.reporter = ScraperReporter()
         
     def generate_event_id(self, date: datetime, venue: str) -> str:
-        """Generate a unique event ID based on date and venue."""
+        """
+        Generate a unique event ID based on date and venue.
+        
+        Args:
+            date (datetime): Event date
+            venue (str): Venue name
+            
+        Returns:
+            str: 12-character hexadecimal event ID
+        """
         unique_string = f"{date.strftime('%Y%m%d')}_{venue}"
         return hashlib.md5(unique_string.encode()).hexdigest()[:12]
         
     def parse_date_range(self, date_text: str) -> Optional[Dict[str, datetime]]:
-        """Parse a date range string into start and end dates."""
+        """
+        Parse a date range string into start and end dates.
+        
+        Args:
+            date_text (str): Date string in format "MMM DD, YYYY" or "MMM DD, YYYY - MMM DD, YYYY"
+            
+        Returns:
+            Optional[Dict[str, datetime]]: Dictionary with start_date and end_date,
+                                         or None if parsing fails
+        """
         print(f"[DEBUG] Parsing date text: {date_text}")
         try:
             if " - " in date_text:
@@ -56,7 +108,15 @@ class GooseTourScraper:
             return None
             
     def extract_ticket_link(self, show_element) -> Optional[str]:
-        """Extract the ticket link from a show element."""
+        """
+        Extract the ticket link from a show element.
+        
+        Args:
+            show_element: Selenium WebElement containing show information
+            
+        Returns:
+            Optional[str]: Ticket link URL or None if not found
+        """
         try:
             ticket_link = show_element.find_element(By.CSS_SELECTOR, "a[href*='seated.com']")
             return ticket_link.get_attribute("href")
@@ -64,7 +124,15 @@ class GooseTourScraper:
             return None
             
     def extract_vip_link(self, show_element) -> Optional[str]:
-        """Extract the VIP link from a show element."""
+        """
+        Extract the VIP link from a show element.
+        
+        Args:
+            show_element: Selenium WebElement containing show information
+            
+        Returns:
+            Optional[str]: VIP link URL or None if not found
+        """
         try:
             vip_link = show_element.find_element(By.CSS_SELECTOR, "a[href*='vip']")
             return vip_link.get_attribute("href")
@@ -72,7 +140,15 @@ class GooseTourScraper:
             return None
             
     def extract_additional_info(self, show_element) -> List[str]:
-        """Extract additional information from a show element."""
+        """
+        Extract additional information from a show element.
+        
+        Args:
+            show_element: Selenium WebElement containing show information
+            
+        Returns:
+            List[str]: List of additional information strings
+        """
         info = []
         try:
             # Look for supporting acts
@@ -93,7 +169,20 @@ class GooseTourScraper:
         return info
         
     def scrape_tour_dates(self) -> List[Dict]:
-        """Scrape tour dates from the website."""
+        """
+        Scrape tour dates from the website.
+        
+        Returns:
+            List[Dict]: List of concert dictionaries containing:
+                - event_id: Unique identifier
+                - start_date: Event start date
+                - end_date: Event end date
+                - venue: Venue name
+                - location: Venue location
+                - ticket_link: Link to purchase tickets
+                - vip_link: Link to VIP tickets (if available)
+                - additional_info: List of additional information
+        """
         print("[DEBUG] Starting to scrape tour dates...")
         self.reporter.log_scrape_start()
         driver = webdriver.Chrome(options=self.chrome_options)
@@ -116,24 +205,9 @@ class GooseTourScraper:
                     if date_range:
                         venue = show.find_element(By.CSS_SELECTOR, ".seated-event-venue-name").text
                         location = show.find_element(By.CSS_SELECTOR, ".seated-event-venue-location").text
-                        ticket_link = None
-                        for a in show.find_elements(By.TAG_NAME, "a"):
-                            href = a.get_attribute("href")
-                            if href and "seated.com" in href:
-                                ticket_link = href
-                                break
-                        vip_link = None
-                        for a in show.find_elements(By.TAG_NAME, "a"):
-                            href = a.get_attribute("href")
-                            if href and "vip" in href:
-                                vip_link = href
-                                break
-                        additional_info = []
-                        details_cell = show.find_elements(By.CSS_SELECTOR, ".seated-event-details-cell")
-                        if details_cell:
-                            details_text = details_cell[0].text.strip()
-                            if details_text:
-                                additional_info.append(details_text)
+                        ticket_link = self.extract_ticket_link(show)
+                        vip_link = self.extract_vip_link(show)
+                        additional_info = self.extract_additional_info(show)
                         event_id = self.generate_event_id(date_range['start_date'], venue)
                         shows.append({
                             "event_id": event_id,
@@ -161,7 +235,12 @@ class GooseTourScraper:
         return shows
         
     def save_tour_dates(self, shows: List[Dict]) -> None:
-        """Save tour dates to CSV and JSON files with timestamp."""
+        """
+        Save tour dates to CSV and JSON files with timestamp.
+        
+        Args:
+            shows (List[Dict]): List of concert dictionaries to save
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         scraped_concerts_dir = Path("data/scraped_concerts")
         scraped_concerts_dir.mkdir(exist_ok=True)
@@ -182,6 +261,11 @@ class GooseTourScraper:
             print(f"[DEBUG] Saved CSV file to: {csv_path}")
                 
 def main():
+    """
+    Main entry point for the scraper.
+    
+    Initializes the scraper, runs it, and saves the results.
+    """
     print('[DEBUG] Entered main()')
     print("[DEBUG] Starting the scraper...")
     scraper = GooseTourScraper()
