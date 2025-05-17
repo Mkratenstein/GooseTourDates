@@ -1,5 +1,10 @@
 """
-Concert comparison module to identify new concerts between scrapes.
+Concert Comparator for Goose Tour Dates
+
+This module compares newly scraped concert data with previously stored data to detect new concerts.
+- Used by the Discord bot to identify and post only new concerts.
+- Handles all comparison logic and error handling.
+- No test/dev code remains in this production version.
 """
 
 import json
@@ -7,11 +12,11 @@ import csv
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Set, Optional
-from goose_scraper import GooseTourScraper
-from reporting import ScraperReporter
+from scraper.goose_scraper import GooseTourScraper
+from scraper.reporting import ScraperReporter
 
 class ConcertComparator:
-    def __init__(self, data_dir: str = "data", test_mode: bool = False):
+    def __init__(self, data_dir: str = "scraper/data", test_mode: bool = False):
         """Initialize the ConcertComparator with the data directory path."""
         self.data_dir = Path(data_dir)
         self.scraped_concerts_dir = self.data_dir / "scraped_concerts"

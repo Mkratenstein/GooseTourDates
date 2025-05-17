@@ -5,7 +5,6 @@ This module provides:
 - Automated posting of new concerts to Discord
 - Manual trigger of scraper via /scrape command
 - System status checking via /status command
-- Bot restart functionality via /restart command
 - Authorization checks for commands
 - Comprehensive logging and error handling
 
@@ -28,29 +27,73 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Optional
-from goose_scraper import GooseTourScraper
-from concert_comparator import ConcertComparator
-from reporting import ScraperReporter
+from scraper.goose_scraper import GooseTourScraper
+from scraper.concert_comparator import ConcertComparator
+from scraper.reporting import ScraperReporter
 import traceback
 import logging
+from logging.handlers import RotatingFileHandler
 import json
 from datetime import datetime
+from scraper.railway_config import setup_railway
+
+# Setup Railway configurations
+railway_config = setup_railway()
+
+# Load environment variables
+load_dotenv()
+
+# Create logs directory if it doesn't exist
+logs_dir = Path("scraper/logs")
+logs_dir.mkdir(parents=True, exist_ok=True)
+
+def cleanup_old_logs():
+    """Clean up old timestamped log files, keeping only the 5 most recent ones."""
+    try:
+        # Find all timestamped log files
+        old_logs = list(logs_dir.glob("discord_bot_*.log"))
+        if not old_logs:
+            return
+        # Sort by modification time (newest first)
+        old_logs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        # Keep the 5 most recent files, delete the rest
+        for old_log in old_logs[5:]:
+            try:
+                old_log.unlink()
+                # Use print as logger may not be set up yet
+                print(f"Deleted old log file: {old_log}")
+            except Exception as e:
+                print(f"Failed to delete old log file {old_log}: {e}")
+        print(f"Cleaned up {len(old_logs[5:])} old log files")
+    except Exception as e:
+        print(f"Error during log cleanup: {e}")
 
 # Configure logging to both file and console
-# Logs are stored in logs/discord_bot.log relative to project root
-logging.basicConfig(
-    level=logging.DEBUG,  # DEBUG level for development, change to INFO for production
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/discord_bot.log'),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger('discord_bot')
+logger.setLevel(logging.DEBUG)
 
-# Load environment variables from .env file
-load_dotenv()
-logger.debug("Environment variables loaded")
+# Create a rotating file handler (1MB max size, keep 5 backup files)
+log_file = logs_dir / "discord_bot.log"
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=1024*1024,  # 1MB
+    backupCount=5,
+    encoding='utf-8'
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Create console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Add handlers to logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Now clean up old logs (logger is set up)
+cleanup_old_logs()
 
 # Bot configuration from environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -128,48 +171,44 @@ class GooseTourBot:
             concerts (list): List of concert dictionaries containing:
                 - venue: Venue name
                 - start_date: Event start date
+                - end_date: Event end date (optional)
                 - location: Venue location
                 - ticket_link: Link to purchase tickets
-                - vip_link: Optional VIP ticket link
                 - additional_info: Optional list of additional information
         """
         if not concerts:
             return
             
         try:
-            embed = discord.Embed(
-                title="🎸 New Goose Tour Dates!",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            
             for concert in concerts:
                 try:
                     venue = concert['venue']
-                    date = concert['start_date'].split('T')[0]  # Format: YYYY-MM-DD
+                    start_date = datetime.fromisoformat(concert['start_date']).strftime('%B %d, %Y')
+                    end_date = datetime.fromisoformat(concert['end_date']).strftime('%B %d, %Y') if concert.get('end_date') else None
                     location = concert['location']
                     ticket_link = concert['ticket_link']
                     
-                    # Add VIP info if available
-                    vip_info = ""
-                    if concert.get('vip_link'):
-                        vip_info = "\n🎫 VIP tickets available!"
-                        
-                    # Add additional info if available
-                    additional_info = ""
-                    if concert.get('additional_info'):
-                        additional_info = "\nℹ️ " + " | ".join(concert['additional_info'])
-                        
-                    embed.add_field(
-                        name=f"{venue} - {date}",
-                        value=f"📍 {location}\n🔗 [Get Tickets]({ticket_link}){vip_info}{additional_info}",
-                        inline=False
+                    # Format the date range
+                    date_range = f"{start_date} to {end_date}" if end_date else start_date
+                    
+                    # Create the message
+                    message = (
+                        "Goose the Organization has announced a new show!\n\n"
+                        f"{date_range}\n"
+                        f"{venue} | {location}\n"
+                        f"🎫 Tickets: [{ticket_link}]({ticket_link})"
                     )
+                    
+                    # Add additional info if available
+                    if concert.get('additional_info'):
+                        message += "\n\n" + "\n".join(concert['additional_info'])
+                    
+                    await self.channel.send(message)
+                    
                 except KeyError as e:
                     logger.error(f"Missing required field in concert data: {e}")
                     continue
                     
-            await self.channel.send(embed=embed)
             logger.info(f"Posted {len(concerts)} new concerts to Discord")
         except Exception as e:
             logger.error(f"Failed to post concerts: {e}")
@@ -194,7 +233,7 @@ class GooseTourBot:
             )
             
             # Check if data directories exist
-            data_dir = Path("data")
+            data_dir = Path("scraper/data")
             scraped_dir = data_dir / "scraped_concerts"
             new_concerts_dir = data_dir / "new_concerts"
             
@@ -206,7 +245,7 @@ class GooseTourBot:
             )
             
             # Check log directory
-            log_dir = Path("logs")
+            log_dir = Path("scraper/logs")
             embed.add_field(
                 name="Logging",
                 value=f"📝 Log Directory: {'✅' if log_dir.exists() else '❌'}",
@@ -268,16 +307,28 @@ async def on_ready():
         if DISCORD_GUILD_ID:
             logger.debug(f"Attempting to sync commands to guild {DISCORD_GUILD_ID}")
             guild = discord.Object(id=DISCORD_GUILD_ID)
-            synced = await bot.tree.sync(guild=guild)
-            logger.info(f"Synced {len(synced)} command(s) to guild {DISCORD_GUILD_ID}")
-            for cmd in synced:
-                logger.debug(f"Synced command: {cmd.name}")
+            try:
+                synced = await bot.tree.sync(guild=guild)
+                logger.info(f"Synced {len(synced)} command(s) to guild {DISCORD_GUILD_ID}")
+                for cmd in synced:
+                    logger.debug(f"Synced command: {cmd.name}")
+            except Exception as e:
+                logger.error(f"Failed to sync commands: {e}")
+                # Try global sync as fallback
+                try:
+                    synced = await bot.tree.sync()
+                    logger.info(f"Synced {len(synced)} command(s) globally")
+                except Exception as e2:
+                    logger.error(f"Failed to sync commands globally: {e2}")
         else:
             logger.debug("Syncing commands globally")
-            synced = await bot.tree.sync()
-            logger.info(f"Synced {len(synced)} command(s) globally")
-            for cmd in synced:
-                logger.debug(f"Synced command: {cmd.name}")
+            try:
+                synced = await bot.tree.sync()
+                logger.info(f"Synced {len(synced)} command(s) globally")
+                for cmd in synced:
+                    logger.debug(f"Synced command: {cmd.name}")
+            except Exception as e:
+                logger.error(f"Failed to sync commands globally: {e}")
     except Exception as e:
         logger.error(f"Bot startup failed: {e}\n{traceback.format_exc()}")
         sys.exit(1)
@@ -309,7 +360,8 @@ def is_authorized():
 
 @bot.tree.command(
     name="scrape",
-    description="Manually trigger the scraper to check for new tour dates"
+    description="Manually trigger the scraper to check for new tour dates",
+    guild=discord.Object(id=DISCORD_GUILD_ID) if DISCORD_GUILD_ID else None
 )
 @app_commands.checks.cooldown(1, 300)  # 5 minute cooldown
 @is_authorized()
@@ -330,44 +382,51 @@ async def manual_scrape(interaction: discord.Interaction):
         
         # Send initial status
         await interaction.followup.send("🔄 Starting manual scrape...", ephemeral=True)
+        logger.info("Starting manual scrape process")
         
         try:
             # Run the scraper
+            logger.debug("Calling process_new_concerts()")
             new_concerts = goose_bot.comparator.process_new_concerts()
+            logger.info(f"Scrape completed. Found {len(new_concerts)} new concerts")
             
             if new_concerts:
                 # Post new concerts to the channel
+                logger.debug("Posting new concerts to Discord")
                 await goose_bot.post_new_concerts(new_concerts)
                 await interaction.followup.send(
                     f"✅ Found {len(new_concerts)} new concerts! Check the channel for details.",
                     ephemeral=True
                 )
+                logger.info("Successfully posted new concerts to Discord")
             else:
                 await interaction.followup.send(
                     "ℹ️ No new concerts found.",
                     ephemeral=True
                 )
+                logger.info("No new concerts found during scrape")
                 
         except Exception as e:
-            logger.error(f"Error during scrape: {e}\n{traceback.format_exc()}")
+            error_msg = f"Error during scrape: {e}\n{traceback.format_exc()}"
+            logger.error(error_msg)
             await interaction.followup.send(
                 f"❌ Error during scrape: {str(e)}\nPlease check the logs for more details.",
                 ephemeral=True
             )
             
     except Exception as e:
-        logger.error(f"Error handling scrape command: {e}\n{traceback.format_exc()}")
-        try:
-            await interaction.followup.send(
+        error_msg = f"Error handling scrape command: {e}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
                 "❌ An unexpected error occurred. Please check the logs for more details.",
                 ephemeral=True
             )
-        except:
-            pass
 
 @bot.tree.command(
     name="status",
-    description="Check the status of the bot and system"
+    description="Check the status of the bot and system",
+    guild=discord.Object(id=DISCORD_GUILD_ID) if DISCORD_GUILD_ID else None
 )
 @app_commands.checks.cooldown(1, 60)  # 1 minute cooldown
 @is_authorized()
@@ -395,19 +454,18 @@ async def check_status(interaction: discord.Interaction):
         )
         
         # Check if data directories exist
-        data_dir = Path("data")
+        data_dir = Path("scraper/data")
         scraped_dir = data_dir / "scraped_concerts"
         new_concerts_dir = data_dir / "new_concerts"
         
         embed.add_field(
             name="Data Directories",
             value=f"📁 Scraped Data: {'✅' if scraped_dir.exists() else '❌'}\n"
-                  f"📁 New Concerts: {'✅' if new_concerts_dir.exists() else '❌'}",
-            inline=False
+                  f"📁 New Concerts: {'✅' if new_concerts_dir.exists() else '❌'}"
         )
         
         # Check log directory
-        log_dir = Path("logs")
+        log_dir = Path("scraper/logs")
         embed.add_field(
             name="Logging",
             value=f"📝 Log Directory: {'✅' if log_dir.exists() else '❌'}",
@@ -451,44 +509,16 @@ async def check_status(interaction: discord.Interaction):
         logger.info("Status check completed successfully")
         
     except Exception as e:
-        logger.error(f"Status check failed: {e}\n{traceback.format_exc()}")
-        try:
-            await interaction.followup.send(
+        error_msg = f"Status check failed: {e}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
                 f"❌ Error during status check: {str(e)}\nPlease check the logs for more details.",
                 ephemeral=True
             )
-        except Exception as followup_error:
-            logger.error(f"Failed to send error message: {followup_error}")
-
-@bot.tree.command(
-    name="restart",
-    description="Restart the bot"
-)
-@app_commands.checks.cooldown(1, 300)  # 5 minute cooldown
-@is_authorized()
-async def restart_bot(interaction: discord.Interaction):
-    """
-    Restart the bot.
-    
-    This command:
-    1. Sends a restart message
-    2. Closes the bot
-    3. Restarts the Python process
-    """
-    try:
-        await interaction.response.send_message("🔄 Restarting bot...")
-        await bot.close()
-        os.execv(sys.executable, ['python'] + sys.argv)
-    except Exception as e:
-        logger.error(f"Bot restart failed: {e}\n{traceback.format_exc()}")
-        await interaction.followup.send(
-            f"❌ Error during restart: {str(e)}\nPlease check the logs for more details.",
-            ephemeral=True
-        )
 
 @manual_scrape.error
 @check_status.error
-@restart_bot.error
 async def command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """
     Handle command errors.
@@ -500,49 +530,71 @@ async def command_error(interaction: discord.Interaction, error: app_commands.Ap
     """
     try:
         if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(
-                f"⏰ This command is on cooldown. Try again in {error.retry_after:.0f} seconds.",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"⏰ This command is on cooldown. Try again in {error.retry_after:.0f} seconds.",
+                    ephemeral=True
+                )
         elif isinstance(error, AuthorizationError):
-            await interaction.response.send_message(
-                "❌ You are not authorized to use this command.",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ You are not authorized to use this command.",
+                    ephemeral=True
+                )
         else:
             logger.error(f"Command error: {error}\n{traceback.format_exc()}")
-            await interaction.response.send_message(
-                f"❌ An error occurred: {str(error)}\nPlease check the logs for more details.",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"❌ An error occurred: {str(error)}\nPlease check the logs for more details.",
+                    ephemeral=True
+                )
     except Exception as e:
         logger.error(f"Error handler failed: {e}\n{traceback.format_exc()}")
-        try:
+        if not interaction.response.is_done():
             await interaction.response.send_message(
                 "❌ An unexpected error occurred. Please check the logs.",
                 ephemeral=True
             )
-        except:
-            pass
 
 def run_bot():
-    """
-    Run the Discord bot.
-    
-    This function:
-    1. Verifies the Discord token exists
-    2. Starts the bot
-    3. Handles any runtime errors
-    """
-    if not DISCORD_TOKEN:
-        logger.error("Discord token not found in environment variables")
-        sys.exit(1)
-        
+    """Run the Discord bot."""
     try:
+        print("\n=== Goose Tour Bot Starting ===")
+        print(f"Log file: {log_file}")
+        print("Initializing bot...")
+        
+        # If running on Railway, start a simple HTTP server to keep the app alive
+        if railway_config['is_railway']:
+            print("Railway environment detected - starting health check server...")
+            import threading
+            from http.server import HTTPServer, BaseHTTPRequestHandler
+            
+            class HealthCheckHandler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(b'Bot is running!')
+            
+            def run_health_check():
+                server = HTTPServer((railway_config['host'], railway_config['port']), HealthCheckHandler)
+                server.serve_forever()
+            
+            # Start health check server in a separate thread
+            health_check_thread = threading.Thread(target=run_health_check)
+            health_check_thread.daemon = True
+            health_check_thread.start()
+            print("Health check server started")
+        
+        print("Starting Discord bot...")
+        # Run the bot
         bot.run(DISCORD_TOKEN)
     except Exception as e:
-        logger.error(f"Bot runtime error: {e}\n{traceback.format_exc()}")
-        sys.exit(1)
+        print(f"\n❌ ERROR: Failed to run bot: {e}")
+        logger.error(f"Failed to run bot: {e}")
+        raise
 
 if __name__ == "__main__":
+    print("\n=== Goose Tour Bot ===")
+    print("Press Ctrl+C to stop the bot")
     run_bot() 

@@ -1,5 +1,5 @@
 # Log Rotation and Monitoring Script
-# This script handles log rotation and monitoring for Railway deployment logs
+# This script handles log rotation and monitoring for Railway deployment logs and Discord bot logs
 
 param(
     [string]$LogsPath = ".\logs",
@@ -7,6 +7,17 @@ param(
     [int]$MaxStorageGB = 10,
     [int]$AlertThresholdGB = 8
 )
+
+# Ensure required directories exist
+if (-not (Test-Path $LogsPath)) {
+    New-Item -ItemType Directory -Path $LogsPath | Out-Null
+    Write-Host "Created logs directory: $LogsPath"
+}
+
+if (-not (Test-Path $ArchivePath)) {
+    New-Item -ItemType Directory -Path $ArchivePath | Out-Null
+    Write-Host "Created archive directory: $ArchivePath"
+}
 
 # Function to get directory size in GB
 function Get-DirectorySize {
@@ -47,18 +58,32 @@ $thirtyDaysAgo = $currentDate.AddDays(-30)
 $ninetyDaysAgo = $currentDate.AddDays(-90)
 $threeSixtyFiveDaysAgo = $currentDate.AddDays(-365)
 
-# Process logs older than 30 days
-Get-ChildItem -Path "$LogsPath\*.log" | ForEach-Object {
-    if ($_.LastWriteTime -lt $thirtyDaysAgo) {
-        # Create monthly archive directory if it doesn't exist
-        $archiveMonth = $_.LastWriteTime.ToString("yyyy-MM")
-        $monthlyArchivePath = "$ArchivePath\$archiveMonth"
-        if (-not (Test-Path $monthlyArchivePath)) {
-            New-Item -ItemType Directory -Path $monthlyArchivePath | Out-Null
+# Process all log files (including Discord bot logs)
+$logPatterns = @(
+    "*.log",                    # All log files
+    "discord_bot*.log",         # Discord bot logs
+    "discord_bot*.log.*"        # Discord bot rotated logs
+)
+
+foreach ($pattern in $logPatterns) {
+    Get-ChildItem -Path "$LogsPath\$pattern" | ForEach-Object {
+        if ($_.LastWriteTime -lt $thirtyDaysAgo) {
+            # Create monthly archive directory if it doesn't exist
+            $archiveMonth = $_.LastWriteTime.ToString("yyyy-MM")
+            $monthlyArchivePath = "$ArchivePath\$archiveMonth"
+            if (-not (Test-Path $monthlyArchivePath)) {
+                New-Item -ItemType Directory -Path $monthlyArchivePath | Out-Null
+            }
+            
+            # Move file to archive
+            try {
+                Move-Item -Path $_.FullName -Destination "$monthlyArchivePath\$($_.Name)" -Force
+                Write-Host "Moved $($_.Name) to $monthlyArchivePath"
+            }
+            catch {
+                Write-Host "Failed to move $($_.Name): $_"
+            }
         }
-        
-        # Move file to archive
-        Move-Item -Path $_.FullName -Destination "$monthlyArchivePath\$($_.Name)"
     }
 }
 
@@ -68,9 +93,15 @@ Get-ChildItem -Path $ArchivePath -Directory | ForEach-Object {
         # Create zip archive
         $archiveName = "$ArchivePath\$($_.Name)_archive.zip"
         if (-not (Test-Path $archiveName)) {
-            Compress-Archive -Path $_.FullName -DestinationPath $archiveName
-            # Remove original directory after successful compression
-            Remove-Item -Path $_.FullName -Recurse -Force
+            try {
+                Compress-Archive -Path $_.FullName -DestinationPath $archiveName
+                # Remove original directory after successful compression
+                Remove-Item -Path $_.FullName -Recurse -Force
+                Write-Host "Compressed and removed $($_.Name) to $archiveName"
+            }
+            catch {
+                Write-Host "Failed to compress $($_.Name): $_"
+            }
         }
     }
 }
@@ -80,18 +111,18 @@ Get-ChildItem -Path "$ArchivePath\*.zip" | ForEach-Object {
     if ($_.LastWriteTime -lt $threeSixtyFiveDaysAgo) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $logMsg = "[$timestamp] Deleted archive: $($_.FullName) (LastWriteTime: $($_.LastWriteTime)) (older than 365 days)"
-        Remove-Item -Path $_.FullName -Force
-        Add-Content -Path "$LogsPath\rotation.log" -Value $logMsg
+        try {
+            Remove-Item -Path $_.FullName -Force
+            Add-Content -Path "$LogsPath\rotation.log" -Value $logMsg
+            Write-Host "Deleted old archive: $($_.Name)"
+        }
+        catch {
+            Write-Host "Failed to delete $($_.Name): $_"
+        }
     }
 }
 
-# Clean up old zip archives (optional - uncomment if needed)
-# Get-ChildItem -Path "$ArchivePath\*.zip" | ForEach-Object {
-#     if ($_.LastWriteTime -lt $ninetyDaysAgo) {
-#         Remove-Item -Path $_.FullName -Force
-#     }
-# }
-
 # Log rotation complete
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-Add-Content -Path "$LogsPath\rotation.log" -Value "[$timestamp] Log rotation completed successfully" 
+Add-Content -Path "$LogsPath\rotation.log" -Value "[$timestamp] Log rotation completed successfully"
+Write-Host "Log rotation completed successfully at $timestamp" 

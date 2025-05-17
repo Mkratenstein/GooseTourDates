@@ -1,0 +1,1 @@
+web: python -m scraper.discord_bot 

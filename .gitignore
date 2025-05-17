@@ -54,6 +54,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -72,7 +73,6 @@ wheels/
 
 # Virtual Environment
 venv/
-env/
 ENV/
 
 # Selenium/Chrome
@@ -83,17 +83,15 @@ geckodriver.exe
 *.log
 
 # Project specific
+logs/
+data/scraped_concerts/
+*.log
+.env
+
+# Scraped data
 data/*.csv
 data/*.json
 !data/.gitkeep
-
-# Logs
-logs/
-*.log
-
-# Scraped data
-data/scraped_concerts/*.csv
-data/scraped_concerts/*.json
 
 # Test data
 data/test/*.csv

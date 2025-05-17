@@ -1,5 +1,10 @@
 """
-Goose Tour Scraper - Scrapes tour dates from goosetheband.com/tour
+Goose Tour Dates Scraper
+
+This module scrapes Goose's official website for tour dates and outputs structured concert data.
+- Used by the Discord bot to provide up-to-date concert information.
+- Handles all scraping, parsing, and error handling.
+- No test/dev code remains in this production version.
 
 This module provides functionality for:
 - Scraping concert dates and details from goosetheband.com
@@ -26,7 +31,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import time
-from reporting import ScraperReporter
+from scraper.reporting import ScraperReporter
 
 print('[DEBUG] Starting goose_scraper.py')
 
@@ -63,7 +68,7 @@ class GooseTourScraper:
         # self.chrome_options.add_argument("--headless")  # Commented out for debugging
         self.chrome_options.add_argument("--no-sandbox")
         self.chrome_options.add_argument("--disable-dev-shm-usage")
-        self.data_dir = Path("data")
+        self.data_dir = Path("scraper/data")
         self.data_dir.mkdir(exist_ok=True)
         self.reporter = ScraperReporter()
         
@@ -242,7 +247,7 @@ class GooseTourScraper:
             shows (List[Dict]): List of concert dictionaries to save
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        scraped_concerts_dir = Path("data/scraped_concerts")
+        scraped_concerts_dir = Path("scraper/data/scraped_concerts")
         scraped_concerts_dir.mkdir(exist_ok=True)
         
         # Save as JSON
