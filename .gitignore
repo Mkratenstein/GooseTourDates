@@ -89,4 +89,12 @@ data/*.json
 
 # Logs
 logs/
-*.log 
+*.log
+
+# Scraped data
+data/scraped_concerts/*.csv
+data/scraped_concerts/*.json
+
+# Test data
+data/test/*.csv
+data/test/*.json 
