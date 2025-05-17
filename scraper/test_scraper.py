@@ -34,12 +34,29 @@ def test_parse_date_range_invalid(scraper):
     result = scraper.parse_date_range(date_text)
     assert result is None
 
+@pytest.mark.integration
 def test_fetch_tour_page(scraper):
     """Test fetching the tour page"""
     content = scraper.fetch_tour_page()
     assert content is not None
     assert isinstance(content, str)
     assert len(content) > 0
+
+def test_generate_event_id(scraper):
+    """Test generating event IDs"""
+    date = datetime(2024, 3, 15)
+    venue = "Test Venue"
+    event_id = scraper.generate_event_id(date, venue)
+    assert isinstance(event_id, str)
+    assert len(event_id) == 12
+    # Test that same date and venue produce same ID
+    assert event_id == scraper.generate_event_id(date, venue)
+    # Test that different date produces different ID
+    different_date = datetime(2024, 3, 16)
+    assert event_id != scraper.generate_event_id(different_date, venue)
+    # Test that different venue produces different ID
+    different_venue = "Different Venue"
+    assert event_id != scraper.generate_event_id(date, different_venue)
 
 def test_extract_ticket_link(scraper):
     """Test extracting ticket links"""
