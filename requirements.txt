@@ -7,4 +7,6 @@ beautifulsoup4==4.12.3
 jinja2
 colorama
 pandas
-geopy 
+geopy
+fastapi==0.109.2
+uvicorn==0.27.1 

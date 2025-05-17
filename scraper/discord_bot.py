@@ -36,6 +36,9 @@ from logging.handlers import RotatingFileHandler
 import json
 from datetime import datetime
 from scraper.railway_config import setup_railway
+import uvicorn
+from threading import Thread
+from scraper.api import app
 
 # Setup Railway configurations
 railway_config = setup_railway()
@@ -549,6 +552,15 @@ def run_bot():
         print("\n=== Goose Tour Bot Starting ===")
         print(f"Log file: {log_file}")
         print("Initializing bot...")
+        
+        # Start FastAPI server in a separate thread
+        def run_api():
+            uvicorn.run(app, host="0.0.0.0", port=8000)
+        
+        api_thread = Thread(target=run_api)
+        api_thread.daemon = True
+        api_thread.start()
+        print("API server started on port 8000")
         
         # If running on Railway, start a simple HTTP server to keep the app alive
         if railway_config['is_railway']:
