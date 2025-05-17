@@ -1,1 +1,1 @@
-web: python -m scraper.discord_bot 
+worker: python -m scraper.discord_bot 

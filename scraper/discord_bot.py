@@ -47,27 +47,6 @@ load_dotenv()
 logs_dir = Path("scraper/logs")
 logs_dir.mkdir(parents=True, exist_ok=True)
 
-def cleanup_old_logs():
-    """Clean up old timestamped log files, keeping only the 5 most recent ones."""
-    try:
-        # Find all timestamped log files
-        old_logs = list(logs_dir.glob("discord_bot_*.log"))
-        if not old_logs:
-            return
-        # Sort by modification time (newest first)
-        old_logs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        # Keep the 5 most recent files, delete the rest
-        for old_log in old_logs[5:]:
-            try:
-                old_log.unlink()
-                # Use print as logger may not be set up yet
-                print(f"Deleted old log file: {old_log}")
-            except Exception as e:
-                print(f"Failed to delete old log file {old_log}: {e}")
-        print(f"Cleaned up {len(old_logs[5:])} old log files")
-    except Exception as e:
-        print(f"Error during log cleanup: {e}")
-
 # Configure logging to both file and console
 logger = logging.getLogger('discord_bot')
 logger.setLevel(logging.DEBUG)
@@ -93,7 +72,26 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # Now clean up old logs (logger is set up)
-cleanup_old_logs()
+def cleanup_old_logs():
+    """Clean up old timestamped log files, keeping only the 5 most recent ones."""
+    try:
+        # Find all timestamped log files
+        old_logs = list(logs_dir.glob("discord_bot_*.log"))
+        if not old_logs:
+            return
+        # Sort by modification time (newest first)
+        old_logs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        # Keep the 5 most recent files, delete the rest
+        for old_log in old_logs[5:]:
+            try:
+                old_log.unlink()
+                # Use print as logger may not be set up yet
+                print(f"Deleted old log file: {old_log}")
+            except Exception as e:
+                print(f"Failed to delete old log file {old_log}: {e}")
+        print(f"Cleaned up {len(old_logs[5:])} old log files")
+    except Exception as e:
+        print(f"Error during log cleanup: {e}")
 
 # Bot configuration from environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -289,46 +287,35 @@ goose_bot = GooseTourBot()
 async def on_ready():
     """
     Called when the bot is ready and connected to Discord.
-    
     This function:
     1. Logs bot connection details
     2. Sets up the bot
-    3. Syncs commands to the guild
+    3. Syncs only the current commands to the guild/global
     """
     try:
         logger.info(f"Bot connected as {bot.user.name}")
         logger.debug(f"Bot user ID: {bot.user.id}")
         logger.debug(f"Bot is in {len(bot.guilds)} guilds")
-        
+
         await goose_bot.setup()
         logger.debug("GooseTourBot setup completed")
-        
-        # Sync commands to a specific guild for instant update if GUILD_ID is set
+
+        guild = None
         if DISCORD_GUILD_ID:
-            logger.debug(f"Attempting to sync commands to guild {DISCORD_GUILD_ID}")
             guild = discord.Object(id=DISCORD_GUILD_ID)
-            try:
-                synced = await bot.tree.sync(guild=guild)
-                logger.info(f"Synced {len(synced)} command(s) to guild {DISCORD_GUILD_ID}")
-                for cmd in synced:
-                    logger.debug(f"Synced command: {cmd.name}")
-            except Exception as e:
-                logger.error(f"Failed to sync commands: {e}")
-                # Try global sync as fallback
-                try:
-                    synced = await bot.tree.sync()
-                    logger.info(f"Synced {len(synced)} command(s) globally")
-                except Exception as e2:
-                    logger.error(f"Failed to sync commands globally: {e2}")
+
+        # Normal sync logic only
+        logger.debug("Syncing commands...")
+        if guild:
+            synced = await bot.tree.sync(guild=guild)
+            logger.info(f"Synced {len(synced)} command(s) to guild {DISCORD_GUILD_ID}")
+            for cmd in synced:
+                logger.debug(f"Synced command: {cmd.name}")
         else:
-            logger.debug("Syncing commands globally")
-            try:
-                synced = await bot.tree.sync()
-                logger.info(f"Synced {len(synced)} command(s) globally")
-                for cmd in synced:
-                    logger.debug(f"Synced command: {cmd.name}")
-            except Exception as e:
-                logger.error(f"Failed to sync commands globally: {e}")
+            synced = await bot.tree.sync()
+            logger.info(f"Synced {len(synced)} command(s) globally")
+            for cmd in synced:
+                logger.debug(f"Synced command: {cmd.name}")
     except Exception as e:
         logger.error(f"Bot startup failed: {e}\n{traceback.format_exc()}")
         sys.exit(1)
