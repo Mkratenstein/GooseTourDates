@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -65,9 +66,15 @@ class GooseTourScraper:
         print('[DEBUG] Initializing GooseTourScraper...')
         self.url = "https://goosetheband.com/tour"
         self.chrome_options = Options()
-        # self.chrome_options.add_argument("--headless")  # Commented out for debugging
+        self.chrome_options.add_argument("--headless")
         self.chrome_options.add_argument("--no-sandbox")
         self.chrome_options.add_argument("--disable-dev-shm-usage")
+        self.chrome_options.add_argument("--disable-gpu")
+        self.chrome_options.add_argument("--window-size=1920,1080")
+        self.chrome_options.add_argument("--disable-extensions")
+        self.chrome_options.add_argument("--disable-software-rasterizer")
+        self.chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        self.chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
         self.data_dir = Path("scraper/data")
         self.data_dir.mkdir(exist_ok=True)
         self.reporter = ScraperReporter()
@@ -200,7 +207,10 @@ class GooseTourScraper:
         """
         print("[DEBUG] Starting to scrape tour dates...")
         self.reporter.log_scrape_start()
-        driver = webdriver.Chrome(options=self.chrome_options)
+        
+        # Set up Chrome service
+        service = Service()
+        driver = webdriver.Chrome(service=service, options=self.chrome_options)
         shows = []
         
         try:
