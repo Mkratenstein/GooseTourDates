@@ -26,7 +26,10 @@ yarn-error.log*
 # Railway Deployment Logs
 /logs/*.log
 /logs/*.txt
+/logs/archive/*.zip
+/logs/archive/*.tar.gz
 !logs/README.md
+!logs/log_rotation.md
 
 # IDE
 .idea/
