@@ -171,6 +171,16 @@ class GooseTourScraper:
         except:
             pass
             
+        try:
+            # Look for additional details in seated-event-details-cell
+            details_cell = show_element.find_element(By.CSS_SELECTOR, ".seated-event-details-cell")
+            if details_cell:
+                details_text = details_cell.text.strip()
+                if details_text:
+                    info.append(details_text)
+        except:
+            pass
+            
         return info
         
     def scrape_tour_dates(self) -> List[Dict]:

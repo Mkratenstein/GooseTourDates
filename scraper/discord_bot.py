@@ -199,9 +199,9 @@ class GooseTourBot:
                         f"🎫 Tickets: [{ticket_link}]({ticket_link})"
                     )
                     
-                    # Add additional info if available
+                    # Add additional info if available, each as a bullet point
                     if concert.get('additional_info'):
-                        message += "\n\n" + "\n".join(concert['additional_info'])
+                        message += "\n\n" + "\n".join(f"- {line}" for line in concert['additional_info'])
                     
                     await self.channel.send(message)
                     
