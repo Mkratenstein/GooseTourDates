@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 from scraper.goose_scraper import GooseTourScraper
+from scraper.reporting import ScraperReporter
 
 class ConcertComparator:
     def __init__(self, data_dir: str = "data", test_mode: bool = False):
@@ -18,6 +19,7 @@ class ConcertComparator:
         self.new_concerts_dir.mkdir(exist_ok=True)
         self.scraped_concerts_dir.mkdir(exist_ok=True)
         self.test_mode = test_mode
+        self.reporter = ScraperReporter()
         print(f"[DEBUG] Initialized ConcertComparator with data directory: {self.data_dir}")
         if test_mode:
             print("[DEBUG] Running in TEST MODE - will skip scraper")
@@ -101,33 +103,31 @@ class ConcertComparator:
                 
     def process_new_concerts(self) -> List[Dict]:
         """Process and save new concerts between current and previous scrape."""
-        if not self.test_mode:
-            # First, run the scraper to get latest concerts
-            print("[DEBUG] Running scraper to get latest concerts...")
-            scraper = GooseTourScraper()
-            concerts = scraper.scrape_tour_dates()
-            scraper.save_tour_dates(concerts)
-        else:
-            print("[DEBUG] Test mode: Skipping scraper")
-        
-        # Get the most recent file
-        json_files = sorted(list(self.scraped_concerts_dir.glob("tour_dates_*.json")))
-        if not json_files:
-            print("[DEBUG] No concert files found.")
-            return []
-            
-        current_file = json_files[-1]
-        print(f"[DEBUG] Processing with current file: {current_file}")
-        
-        current_concerts = self.load_current_concerts(str(current_file))
-        previous_concerts = self.load_previous_concerts()
-        
-        new_concerts = self.find_new_concerts(current_concerts, previous_concerts)
-        
-        if new_concerts:
-            self.save_new_concerts(new_concerts)
-            
-        # Clean up old files
-        self.cleanup_old_files()
-            
-        return new_concerts 
+        self.reporter.log_scrape_start()
+        try:
+            if not self.test_mode:
+                print("[DEBUG] Running scraper to get latest concerts...")
+                scraper = GooseTourScraper()
+                concerts = scraper.scrape_tour_dates()
+                scraper.save_tour_dates(concerts)
+            else:
+                print("[DEBUG] Test mode: Skipping scraper")
+            json_files = sorted(list(self.scraped_concerts_dir.glob("tour_dates_*.json")))
+            if not json_files:
+                print("[DEBUG] No concert files found.")
+                return []
+            current_file = json_files[-1]
+            print(f"[DEBUG] Processing with current file: {current_file}")
+            current_concerts = self.load_current_concerts(str(current_file))
+            previous_concerts = self.load_previous_concerts()
+            new_concerts = self.find_new_concerts(current_concerts, previous_concerts)
+            if new_concerts:
+                self.save_new_concerts(new_concerts)
+                self.reporter.log_new_concerts(new_concerts)
+            self.cleanup_old_files()
+            self.reporter.log_scrape_end(len(current_concerts))
+            return new_concerts
+        except Exception as e:
+            self.reporter.log_error(e, "comparator process_new_concerts")
+            print(f"[ERROR] Error in comparator: {e}")
+            return [] 

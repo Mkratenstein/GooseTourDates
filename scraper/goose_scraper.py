@@ -16,6 +16,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import time
+from scraper.reporting import ScraperReporter
 
 print('[DEBUG] Starting goose_scraper.py')
 
@@ -30,6 +31,7 @@ class GooseTourScraper:
         self.chrome_options.add_argument("--disable-dev-shm-usage")
         self.data_dir = Path("data")
         self.data_dir.mkdir(exist_ok=True)
+        self.reporter = ScraperReporter()
         
     def generate_event_id(self, date: datetime, venue: str) -> str:
         """Generate a unique event ID based on date and venue."""
@@ -93,6 +95,7 @@ class GooseTourScraper:
     def scrape_tour_dates(self) -> List[Dict]:
         """Scrape tour dates from the website."""
         print("[DEBUG] Starting to scrape tour dates...")
+        self.reporter.log_scrape_start()
         driver = webdriver.Chrome(options=self.chrome_options)
         shows = []
         
@@ -145,13 +148,16 @@ class GooseTourScraper:
                         print(f"[DEBUG] Added concert: {venue}")
                 except Exception as e:
                     print(f"[ERROR] Error processing show: {e}")
+                    self.reporter.log_error(e, "processing show")
                     continue
         except Exception as e:
             print(f"[ERROR] Error scraping tour dates: {e}")
+            self.reporter.log_error(e, "scraping tour dates")
         finally:
             driver.quit()
             
         print(f"[DEBUG] Scraped {len(shows)} concerts.")
+        self.reporter.log_scrape_end(len(shows))
         return shows
         
     def save_tour_dates(self, shows: List[Dict]) -> None:
