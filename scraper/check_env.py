@@ -1,0 +1,1 @@
+print("Environment check: Python is running correctly.") 
