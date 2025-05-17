@@ -28,6 +28,8 @@ yarn-error.log*
 /logs/*.txt
 /logs/archive/*.zip
 /logs/archive/*.tar.gz
+/logs/storage_alerts.log
+/logs/rotation.log
 !logs/README.md
 !logs/log_rotation.md
 
