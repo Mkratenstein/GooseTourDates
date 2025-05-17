@@ -211,9 +211,14 @@ class GooseTourScraper:
         
         # Set up Chrome service with webdriver-manager
         driver_path = ChromeDriverManager().install()
-        # Ensure we're using the chromedriver executable, not the notices file
-        if not driver_path.endswith('chromedriver'):
-            driver_path = os.path.join(os.path.dirname(driver_path), 'chromedriver')
+        # Handle the nested directory structure
+        if 'chromedriver-linux64' in driver_path:
+            driver_path = os.path.join(os.path.dirname(driver_path), 'chromedriver-linux64', 'chromedriver')
+        print(f"[DEBUG] Using ChromeDriver path: {driver_path}")
+        
+        # Ensure the driver is executable
+        os.chmod(driver_path, 0o755)
+        
         service = Service(executable_path=driver_path)
         driver = webdriver.Chrome(service=service, options=self.chrome_options)
         shows = []
