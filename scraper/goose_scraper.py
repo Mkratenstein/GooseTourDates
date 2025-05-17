@@ -27,6 +27,7 @@ from typing import List, Dict, Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -208,8 +209,8 @@ class GooseTourScraper:
         print("[DEBUG] Starting to scrape tour dates...")
         self.reporter.log_scrape_start()
         
-        # Set up Chrome service
-        service = Service()
+        # Set up Chrome service with webdriver-manager
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=self.chrome_options)
         shows = []
         
