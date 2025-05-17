@@ -210,7 +210,11 @@ class GooseTourScraper:
         self.reporter.log_scrape_start()
         
         # Set up Chrome service with webdriver-manager
-        service = Service(ChromeDriverManager().install())
+        driver_path = ChromeDriverManager().install()
+        # Ensure we're using the chromedriver executable, not the notices file
+        if not driver_path.endswith('chromedriver'):
+            driver_path = os.path.join(os.path.dirname(driver_path), 'chromedriver')
+        service = Service(executable_path=driver_path)
         driver = webdriver.Chrome(service=service, options=self.chrome_options)
         shows = []
         

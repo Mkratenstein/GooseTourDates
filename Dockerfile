@@ -35,6 +35,10 @@ COPY . .
 # Install our package in development mode
 RUN pip install -e .
 
+# Set up ChromeDriver directory and permissions
+RUN mkdir -p /root/.wdm/drivers/chromedriver/linux64 \
+    && chmod -R 777 /root/.wdm
+
 # Set environment variables for Selenium
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
