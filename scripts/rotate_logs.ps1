@@ -45,6 +45,7 @@ elseif ($currentSize -ge $AlertThresholdGB) {
 $currentDate = Get-Date
 $thirtyDaysAgo = $currentDate.AddDays(-30)
 $ninetyDaysAgo = $currentDate.AddDays(-90)
+$threeSixtyFiveDaysAgo = $currentDate.AddDays(-365)
 
 # Process logs older than 30 days
 Get-ChildItem -Path "$LogsPath\*.log" | ForEach-Object {
@@ -71,6 +72,16 @@ Get-ChildItem -Path $ArchivePath -Directory | ForEach-Object {
             # Remove original directory after successful compression
             Remove-Item -Path $_.FullName -Recurse -Force
         }
+    }
+}
+
+# Delete compressed archives older than 365 days
+Get-ChildItem -Path "$ArchivePath\*.zip" | ForEach-Object {
+    if ($_.LastWriteTime -lt $threeSixtyFiveDaysAgo) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logMsg = "[$timestamp] Deleted archive: $($_.FullName) (LastWriteTime: $($_.LastWriteTime)) (older than 365 days)"
+        Remove-Item -Path $_.FullName -Force
+        Add-Content -Path "$LogsPath\rotation.log" -Value $logMsg
     }
 }
 
