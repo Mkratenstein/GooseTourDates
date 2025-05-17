@@ -7,8 +7,8 @@ import csv
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Set, Optional
-from scraper.goose_scraper import GooseTourScraper
-from scraper.reporting import ScraperReporter
+from goose_scraper import GooseTourScraper
+from reporting import ScraperReporter
 
 class ConcertComparator:
     def __init__(self, data_dir: str = "data", test_mode: bool = False):

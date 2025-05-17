@@ -333,4 +333,35 @@ class ScraperReporter:
             'start': min(dates).strftime('%Y-%m-%d'),
             'end': max(dates).strftime('%Y-%m-%d'),
             'days': (max(dates) - min(dates)).days
-        } 
+        }
+        
+    def get_last_scrape_time(self) -> Optional[str]:
+        """
+        Get the timestamp of the last successful scrape.
+        
+        Returns:
+            Optional[str]: Timestamp of last scrape in format 'YYYY-MM-DD HH:MM:SS',
+                          or None if no scrape has been performed
+        """
+        try:
+            # Look for the most recent scrape log entry
+            log_file = self.log_dir / "scraper.log"
+            if not log_file.exists():
+                return None
+                
+            # Read the last few lines of the log file
+            with open(log_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                
+            # Look for the last "Scraping completed" message
+            for line in reversed(lines):
+                if "Scraping completed" in line:
+                    # Extract timestamp from the log line
+                    timestamp = line.split(' - ')[0]
+                    return timestamp
+                    
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting last scrape time: {e}")
+            return None 
