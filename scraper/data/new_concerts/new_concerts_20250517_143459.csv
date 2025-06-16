@@ -1,2 +1,0 @@
-event_id,start_date,end_date,venue,location,ticket_link,vip_link,additional_info
-test456xyz,2025-12-15T00:00:00,2025-12-15T00:00:00,Test Arena,"Test Town, TS",https://example.com/test-tickets,https://example.com/test-vip,"['Test Event', 'VIP Available']"
