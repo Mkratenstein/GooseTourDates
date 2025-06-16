@@ -1,103 +1,64 @@
-import puppeteer, { Browser } from 'puppeteer';
-
 export interface Concert {
     venue: string;
     location: string;
     date: string;
 }
 
+interface SeatedTourEvent {
+    attributes: {
+        'starts-at-short': string;
+        'venue-name': string;
+        'formatted-address': string;
+    };
+    type: string;
+}
+
 export class Scraper {
-    private browser: Browser | null = null;
-    private readonly url = 'https://www.songkick.com/artists/4219891-goose/calendar';
+    private readonly url = 'https://cdn.seated.com/api/tour/fe8f12bb-393b-4746-a9c3-11b276c68b5d?include=tour-events';
 
     public async initialize(): Promise<void> {
-        if (this.browser) {
-            console.log('Scraper: Browser is already initialized.');
-            return;
-        }
-        console.log('Scraper: Initializing browser.');
-        this.browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process', // This is not recommended for all use cases, but can help in resource-constrained environments.
-                '--disable-gpu'
-            ],
-        });
+        // No browser initialization needed anymore
+        console.log('Scraper initialized (API mode).');
     }
 
     public async scrapeTourDates(): Promise<Concert[]> {
-        if (!this.browser) {
-            throw new Error('Scraper not initialized. Call initialize() before scraping.');
-        }
-
-        console.log('Scraper: Starting to scrape tour dates.');
-        const page = await this.browser.newPage();
-
-        // Set a user agent to avoid basic bot detection
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-
-        await page.goto(this.url, { waitUntil: 'networkidle2' });
-
-        try {
-            // Handle cookie consent banners
-            const acceptButton = await page.$('button.accept-all, button#accept-cookies');
-            if (acceptButton) {
-                console.log('Scraper: Found and clicked the cookie consent button.');
-                await acceptButton.click();
-                await page.waitForNavigation({ waitUntil: 'networkidle2' });
-            }
-        } catch (error) {
-            console.log('Scraper: Did not find a cookie consent button, or it was not clickable. Continuing...');
-        }
+        console.log('Scraper: Fetching tour dates from Seated API.');
         
         try {
-            // Wait for the main container of the event listings
-            await page.waitForSelector('li.event-listing', { timeout: 15000 });
-            console.log('Scraper: Found concert list container on Songkick.');
-        } catch (error) {
-            console.error('Scraper: Could not find concert list container on Songkick. The website structure may have changed.');
+            const response = await fetch(this.url);
+            if (!response.ok) {
+                throw new Error(`API request failed with status ${response.status}: ${await response.text()}`);
+            }
             
-            // Log the full page content for debugging
-            const pageContent = await page.content();
-            console.error('Scraper: Full page HTML:', pageContent);
+            const jsonData = await response.json() as { included: SeatedTourEvent[] };
 
-            await page.close();
+            if (!jsonData.included || !Array.isArray(jsonData.included)) {
+                console.error('Scraper: Invalid data structure from API. "included" array not found.');
+                return [];
+            }
+
+            const concerts: Concert[] = jsonData.included
+                .filter(event => event.type === 'tour-events' && event.attributes)
+                .map(event => {
+                    const attributes = event.attributes;
+                    return {
+                        date: attributes['starts-at-short'],
+                        venue: attributes['venue-name'],
+                        location: attributes['formatted-address'],
+                    };
+                });
+            
+            console.log(`Scraper: Found ${concerts.length} concerts via API.`);
+            return concerts;
+
+        } catch (error) {
+            console.error('Scraper: Error fetching or parsing tour data from API.', error);
             return [];
         }
-
-        const concerts = await page.evaluate(() => {
-            const concertElements = document.querySelectorAll('li.event-listing');
-            const concertData: Concert[] = [];
-
-            concertElements.forEach(element => {
-                const date = element.querySelector('time')?.textContent?.trim() ?? '';
-                const venue = element.querySelector('.venue-name a')?.textContent?.trim() ?? '';
-                const location = element.querySelector('.location-and-datetime-container .location span:last-child')?.textContent?.trim() ?? '';
-                
-                if (venue && location && date) {
-                    concertData.push({ venue, location, date });
-                }
-            });
-
-            return concertData;
-        });
-        
-        console.log(`Scraper: Found ${concerts.length} concerts on the page.`);
-        await page.close();
-        return concerts;
     }
 
     public async close(): Promise<void> {
-        if (this.browser) {
-            console.log('Scraper: Closing browser.');
-            await this.browser.close();
-            this.browser = null;
-        }
+        // No browser to close
+        console.log('Scraper closed (API mode).');
     }
 } 
