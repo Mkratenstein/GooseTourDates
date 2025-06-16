@@ -15,6 +15,10 @@ export class Bot {
     private scraper = new Scraper();
     private database = new DatabaseService();
 
+    public async initialize(): Promise<void> {
+        await this.scraper.initialize();
+    }
+
     public start(): void {
         this.client.on('ready', () => {
             console.log(`Logged in as ${this.client.user?.tag}!`);
@@ -54,6 +58,12 @@ export class Bot {
         }
         
         this.client.login(token);
+    }
+
+    public async shutdown(): Promise<void> {
+        console.log('Shutting down bot gracefully...');
+        await this.scraper.close();
+        this.client.destroy();
     }
 
     private scheduleTourCheck(): void {
@@ -101,7 +111,6 @@ export class Bot {
             }
         } finally {
             console.log('checkTours: Finished tour check.');
-            await this.scraper.close();
         }
     }
 

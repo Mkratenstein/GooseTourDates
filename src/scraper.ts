@@ -10,7 +10,11 @@ export class Scraper {
     private browser: Browser | null = null;
     private readonly url = 'https://www.songkick.com/artists/4219891-goose/calendar';
 
-    private async initialize(): Promise<void> {
+    public async initialize(): Promise<void> {
+        if (this.browser) {
+            console.log('Scraper: Browser is already initialized.');
+            return;
+        }
         console.log('Scraper: Initializing browser.');
         this.browser = await puppeteer.launch({
             headless: true,
@@ -19,12 +23,12 @@ export class Scraper {
     }
 
     public async scrapeTourDates(): Promise<Concert[]> {
-        console.log('Scraper: Starting to scrape tour dates.');
         if (!this.browser) {
-            await this.initialize();
+            throw new Error('Scraper not initialized. Call initialize() before scraping.');
         }
 
-        const page = await this.browser!.newPage();
+        console.log('Scraper: Starting to scrape tour dates.');
+        const page = await this.browser.newPage();
         await page.goto(this.url, { waitUntil: 'networkidle2' });
 
         try {
@@ -62,6 +66,7 @@ export class Scraper {
         if (this.browser) {
             console.log('Scraper: Closing browser.');
             await this.browser.close();
+            this.browser = null;
         }
     }
 } 
