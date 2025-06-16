@@ -36,8 +36,20 @@ export class Scraper {
         await page.goto(this.url, { waitUntil: 'networkidle2' });
 
         try {
+            // Handle cookie consent banners
+            const acceptButton = await page.$('button.accept-all, button#accept-cookies');
+            if (acceptButton) {
+                console.log('Scraper: Found and clicked the cookie consent button.');
+                await acceptButton.click();
+                await page.waitForNavigation({ waitUntil: 'networkidle2' });
+            }
+        } catch (error) {
+            console.log('Scraper: Did not find a cookie consent button, or it was not clickable. Continuing...');
+        }
+        
+        try {
             // Wait for the main container of the event listings
-            await page.waitForSelector('.event-listings-element', { timeout: 15000 });
+            await page.waitForSelector('li.event-listing', { timeout: 15000 });
             console.log('Scraper: Found concert list container on Songkick.');
         } catch (error) {
             console.error('Scraper: Could not find concert list container on Songkick. The website structure may have changed.');
@@ -51,7 +63,7 @@ export class Scraper {
         }
 
         const concerts = await page.evaluate(() => {
-            const concertElements = document.querySelectorAll('.event-listings-element');
+            const concertElements = document.querySelectorAll('li.event-listing');
             const concertData: Concert[] = [];
 
             concertElements.forEach(element => {
