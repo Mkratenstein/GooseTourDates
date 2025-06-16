@@ -16,6 +16,7 @@ export class DatabaseService {
     }
 
     async getConcerts(): Promise<Concert[]> {
+        console.log('Database: Fetching concerts.');
         const { data, error } = await this.client
             .from('concerts')
             .select('venue, date, location');
@@ -25,10 +26,12 @@ export class DatabaseService {
             return [];
         }
 
+        console.log(`Database: Found ${data.length} concerts.`);
         return data;
     }
 
     async saveConcerts(concerts: Concert[]): Promise<void> {
+        console.log(`Database: Saving ${concerts.length} new concerts.`);
         const records = concerts.map(c => ({
             venue: c.venue,
             location: c.location,
@@ -41,6 +44,8 @@ export class DatabaseService {
 
         if (error) {
             console.error('Error saving concerts:', error);
+        } else {
+            console.log('Database: Successfully saved concerts.');
         }
     }
 } 

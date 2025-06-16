@@ -12,6 +12,7 @@ export class Scraper {
     private readonly url = 'https://www.goosetheband.com/tour';
 
     private async initialize(): Promise<void> {
+        console.log('Scraper: Initializing browser.');
         this.browser = await puppeteer.launch({
             args: chrome.args,
             executablePath: await chrome.executablePath,
@@ -20,6 +21,7 @@ export class Scraper {
     }
 
     public async scrapeTourDates(): Promise<Concert[]> {
+        console.log('Scraper: Starting to scrape tour dates.');
         if (!this.browser) {
             await this.initialize();
         }
@@ -44,12 +46,14 @@ export class Scraper {
             return concertData;
         });
         
+        console.log(`Scraper: Found ${concerts.length} concerts on the page.`);
         await page.close();
         return concerts;
     }
 
     public async close(): Promise<void> {
         if (this.browser) {
+            console.log('Scraper: Closing browser.');
             await this.browser.close();
         }
     }

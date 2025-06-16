@@ -24,8 +24,13 @@ export class Bot {
 
         this.client.on('interactionCreate', (interaction) => {
             if (!interaction.isCommand()) return;
+            console.log(`Received interaction: ${interaction.commandName}`);
             this.handleCommand(interaction);
         });
+
+        this.client.on('debug', (info) => console.log(`[DEBUG] ${info}`));
+        this.client.on('warn', (info) => console.warn(`[WARN] ${info}`));
+        this.client.on('error', (error) => console.error(`[ERROR] ${error.message}`));
 
         const token = process.env.DISCORD_TOKEN;
         if (!token) {
@@ -42,6 +47,7 @@ export class Bot {
     }
 
     private async checkTours(interaction?: Interaction): Promise<void> {
+        console.log('checkTours: Starting tour check.');
         try {
             if (interaction) {
                 // The initial reply is now handled by deferReply in the command handler
@@ -55,14 +61,14 @@ export class Bot {
             const newConcerts = scrapedConcerts.filter(sc => !savedConcerts.some(saved => saved.venue === sc.venue && saved.date === sc.date));
 
             if (newConcerts.length > 0) {
-                console.log(`Found ${newConcerts.length} new concerts!`);
+                console.log(`checkTours: Found ${newConcerts.length} new concerts.`);
                 await this.database.saveConcerts(newConcerts);
                 await this.postConcerts(newConcerts);
                 if (interaction) {
                     await (interaction as any).editReply({ content: `Found and posted ${newConcerts.length} new concerts.` });
                 }
             } else {
-                console.log('No new concerts found.');
+                console.log('checkTours: No new concerts found.');
                 if (interaction) {
                     await (interaction as any).editReply({ content: 'No new concerts found.' });
                 }
@@ -78,11 +84,13 @@ export class Bot {
                 }
             }
         } finally {
+            console.log('checkTours: Finished tour check.');
             await this.scraper.close();
         }
     }
 
     private async postConcerts(concerts: Concert[]): Promise<void> {
+        console.log(`postConcerts: Attempting to post ${concerts.length} concerts.`);
         const channelId = process.env.DISCORD_CHANNEL_ID;
         if (!channelId) {
             throw new Error('DISCORD_CHANNEL_ID is not defined in the environment variables.');
@@ -96,6 +104,7 @@ export class Bot {
         for (const concert of concerts) {
             const message = `**New Goose Show Announced!**\n**Date:** ${concert.date}\n**Venue:** ${concert.venue}\n**Location:** ${concert.location}`;
             await channel.send(message);
+            console.log(`postConcerts: Successfully posted announcement for ${concert.venue}.`);
         }
     }
 
@@ -112,6 +121,7 @@ export class Bot {
         ];
 
         try {
+            console.log('Registering slash commands...');
             await this.client.application?.commands.set(commands);
             console.log('Slash commands registered successfully.');
         } catch (error) {
@@ -123,6 +133,7 @@ export class Bot {
         if (!interaction.isCommand()) return;
 
         const { commandName } = interaction;
+        console.log(`handleCommand: Processing command '${commandName}'.`);
 
         if (commandName === 'scrape') {
             await interaction.deferReply({ ephemeral: true });
@@ -130,5 +141,6 @@ export class Bot {
         } else if (commandName === 'status') {
             await interaction.reply({ content: 'Bot is running and operational.', ephemeral: true });
         }
+        console.log(`handleCommand: Finished processing command '${commandName}'.`);
     }
 } 
