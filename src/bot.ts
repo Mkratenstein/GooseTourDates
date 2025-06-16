@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Client, GatewayIntentBits, TextChannel, Interaction, MessageFlags } from 'discord.js';
+import { Client, GatewayIntentBits, TextChannel, Interaction, MessageFlags, GuildMember } from 'discord.js';
 import express from 'express';
 import { Scraper, Concert } from './scraper';
 import { DatabaseService } from './database';
@@ -91,6 +91,9 @@ export class Bot {
 
             const newConcerts = scrapedConcerts.filter(sc => !savedConcerts.some(saved => saved.venue === sc.venue && saved.date === sc.date));
 
+            // Sort new concerts by date in ascending order before processing
+            newConcerts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
             if (newConcerts.length > 0) {
                 console.log(`checkTours: Found ${newConcerts.length} new concerts.`);
                 await this.database.saveConcerts(newConcerts);
@@ -131,7 +134,31 @@ export class Bot {
         }
 
         for (const concert of concerts) {
-            const message = `**New Goose Show Announced!**\n**Date:** ${concert.date}\n**Venue:** ${concert.venue}\n**Location:** ${concert.location}`;
+            // Re-format the date to be more readable, e.g., "September 17, 2025"
+            const date = new Date(`${concert.date}T12:00:00Z`); // Use noon UTC to avoid timezone issues
+            const formattedDate = date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                timeZone: 'UTC' 
+            });
+
+            const messageParts = [
+                'Goose the Organization has announced a new show!',
+                '',
+                formattedDate,
+                `${concert.venue} | ${concert.location}`
+            ];
+
+            if (concert.details) {
+                messageParts.push(concert.details);
+            }
+
+            messageParts.push('');
+            messageParts.push(`🎫 tickets: https://link.seated.com/${concert.id}`);
+
+            const message = messageParts.join('\n');
+
             await channel.send(message);
             console.log(`postConcerts: Successfully posted announcement for ${concert.venue}.`);
         }
@@ -146,6 +173,18 @@ export class Bot {
             {
                 name: 'status',
                 description: 'Check the status of the bot.',
+            },
+            {
+                name: 'postbydate',
+                description: 'Post concerts from the database for a specific date (Admin only).',
+                options: [
+                    {
+                        name: 'date',
+                        type: 3, // String
+                        description: 'The date of the concerts to post (YYYY-MM-DD).',
+                        required: true,
+                    },
+                ],
             },
         ];
 
@@ -175,6 +214,35 @@ export class Bot {
 
         } else if (commandName === 'status') {
             await interaction.reply({ content: 'Bot is running and operational.', flags: [MessageFlags.Ephemeral] });
+        } else if (commandName === 'postbydate') {
+            const adminRoleId = '680100291806363673';
+            const member = interaction.member as GuildMember;
+
+            if (!member.roles.cache.has(adminRoleId)) {
+                return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+            }
+
+            const date = interaction.options.getString('date', true);
+            
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                return interaction.reply({ content: 'Please provide the date in YYYY-MM-DD format.', flags: [MessageFlags.Ephemeral] });
+            }
+
+            await interaction.reply({ content: `Searching for concerts on ${date}...`, flags: [MessageFlags.Ephemeral] });
+
+            try {
+                const concertsToPost = await this.database.getConcertsByDate(date);
+
+                if (concertsToPost.length > 0) {
+                    await this.postConcerts(concertsToPost);
+                    await interaction.followUp({ content: `Found and posted ${concertsToPost.length} concerts for ${date}.`, flags: [MessageFlags.Ephemeral] });
+                } else {
+                    await interaction.followUp({ content: `No concerts found in the database for ${date}.`, flags: [MessageFlags.Ephemeral] });
+                }
+            } catch (error) {
+                console.error(`Error handling postbydate command for date ${date}:`, error);
+                await interaction.followUp({ content: 'An error occurred while fetching concerts from the database.', flags: [MessageFlags.Ephemeral] });
+            }
         }
         console.log(`handleCommand: Finished processing command '${commandName}'.`);
     }
