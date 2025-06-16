@@ -31,8 +31,15 @@ export class Bot {
             console.log(`Received interaction: ${interaction.commandName} (${interaction.id})`);
             try {
                 await this.handleCommand(interaction);
-            } catch (error) {
+            } catch (error: any) {
                 console.error(`Error handling interaction ${interaction.id}:`, error);
+                
+                // If the interaction is unknown, it has expired. No use trying to reply.
+                if (error.code === 10062) { // DiscordAPIError.Codes.UnknownInteraction
+                    console.error('Interaction likely expired. Cannot send error reply.');
+                    return;
+                }
+
                 if (interaction.isRepliable()) {
                     const message = { content: 'An error occurred while processing your command.', ephemeral: true };
                     try {
@@ -68,19 +75,14 @@ export class Bot {
 
     private scheduleTourCheck(): void {
         // Schedule to run every 4 hours
-        cron.schedule('0 */4 * * *', () => this.checkTours());
+        cron.schedule('0 */4 * * *', () => this.checkTours('scheduled'));
         console.log('Scheduled tour check to run every 4 hours.');
     }
 
-    private async checkTours(interaction?: Interaction): Promise<void> {
-        console.log('checkTours: Starting tour check.');
+    private async checkTours(source: 'manual' | 'scheduled', channelId?: string): Promise<void> {
+        console.log(`checkTours: Starting tour check from ${source} source.`);
+        let statusMessage = '';
         try {
-            if (interaction) {
-                // The initial reply is now handled by deferReply in the command handler
-                console.log('Checking for new tour dates (triggered by interaction)...');
-            } else {
-                console.log('Checking for new tour dates (scheduled)...');
-            }
             const scrapedConcerts = await this.scraper.scrapeTourDates();
             const savedConcerts = await this.database.getConcerts();
 
@@ -90,27 +92,26 @@ export class Bot {
                 console.log(`checkTours: Found ${newConcerts.length} new concerts.`);
                 await this.database.saveConcerts(newConcerts);
                 await this.postConcerts(newConcerts);
-                if (interaction) {
-                    await (interaction as any).editReply({ content: `Found and posted ${newConcerts.length} new concerts.` });
-                }
+                statusMessage = `Scrape complete. Found and posted ${newConcerts.length} new concerts.`;
             } else {
                 console.log('checkTours: No new concerts found.');
-                if (interaction) {
-                    await (interaction as any).editReply({ content: 'No new concerts found.' });
-                }
+                statusMessage = 'Scrape complete. No new concerts found.';
             }
         } catch (error) {
             console.error('Error checking tours:', error);
-            if (interaction?.isCommand()) {
-                const message = { content: 'An error occurred while checking for tours.', ephemeral: true };
-                if ((interaction as any).deferred || (interaction as any).replied) {
-                    await (interaction as any).followUp(message);
-                } else {
-                    await (interaction as any).reply(message);
-                }
-            }
+            statusMessage = 'An error occurred while checking for tours. Please check the logs.';
         } finally {
             console.log('checkTours: Finished tour check.');
+            if (source === 'manual' && channelId) {
+                try {
+                    const channel = await this.client.channels.fetch(channelId);
+                    if (channel?.isTextBased()) {
+                        await channel.send(statusMessage);
+                    }
+                } catch (e) {
+                    console.error(`Failed to send status update to channel ${channelId}:`, e);
+                }
+            }
         }
     }
 
@@ -161,8 +162,13 @@ export class Bot {
         console.log(`handleCommand: Processing command '${commandName}'.`);
 
         if (commandName === 'scrape') {
-            await interaction.deferReply({ ephemeral: true });
-            await this.checkTours(interaction);
+            await interaction.reply({ content: '✅ Manual scrape initiated. I will post the results here shortly.', ephemeral: true });
+            
+            // Run the check in the background without awaiting
+            this.checkTours('manual', interaction.channelId).catch(error => {
+                console.error('Error during background scrape:', error);
+            });
+            
         } else if (commandName === 'status') {
             await interaction.reply({ content: 'Bot is running and operational.', ephemeral: true });
         }
