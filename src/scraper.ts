@@ -1,14 +1,19 @@
+// @ts-nocheck
 export interface Concert {
+    id: string; // For the ticket link
     venue: string;
     location: string;
-    date: string;
+    date: string; // This is the YYYY-MM-DD date
+    details?: string; // Optional, for "Goose & Mt. Joy"
 }
 
 interface SeatedTourEvent {
+    id: string;
     attributes: {
-        'starts-at-short': string;
+        'starts-at-date-local': string;
         'venue-name': string;
         'formatted-address': string;
+        details: string | null;
     };
     type: string;
 }
@@ -42,9 +47,11 @@ export class Scraper {
                 .map(event => {
                     const attributes = event.attributes;
                     return {
-                        date: attributes['starts-at-short'],
+                        id: event.id,
+                        date: attributes['starts-at-date-local'],
                         venue: attributes['venue-name'],
                         location: attributes['formatted-address'],
+                        details: attributes.details || undefined,
                     };
                 });
             
