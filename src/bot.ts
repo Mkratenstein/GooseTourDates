@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { Client, GatewayIntentBits, TextChannel, Interaction } from 'discord.js';
+import { Client, GatewayIntentBits, TextChannel, Interaction, MessageFlags } from 'discord.js';
+import express from 'express';
 import { Scraper, Concert } from './scraper';
 import { DatabaseService } from './database';
 import cron from 'node-cron';
@@ -25,6 +26,7 @@ export class Bot {
             console.log(`Logged in as ${this.client.user?.tag}!`);
             this.scheduleTourCheck();
             this.registerCommands();
+            this.startHttpServer();
         });
 
         this.client.on('interactionCreate', async (interaction) => {
@@ -42,7 +44,7 @@ export class Bot {
                 }
 
                 if (interaction.isRepliable()) {
-                    const message = { content: 'An error occurred while processing your command.', ephemeral: true };
+                    const message = { content: 'An error occurred while processing your command.', flags: [MessageFlags.Ephemeral] };
                     try {
                         if (interaction.replied || interaction.deferred) {
                             await interaction.followUp(message);
@@ -163,16 +165,47 @@ export class Bot {
         console.log(`handleCommand: Processing command '${commandName}'.`);
 
         if (commandName === 'scrape') {
-            await interaction.reply({ content: '✅ Manual scrape initiated. I will post the results here shortly.', ephemeral: true });
+            await interaction.reply({ content: '✅ Scrape job received. I will post the results here shortly.', flags: [MessageFlags.Ephemeral] });
             
-            // Run the check in the background without awaiting
-            this.checkTours('manual', interaction.channelId).catch(error => {
-                console.error('Error during background scrape:', error);
-            });
-            
+            fetch(`http://localhost:${process.env.PORT || 8080}/scrape-job`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channelId: interaction.channelId }),
+            }).catch(e => console.error('Failed to dispatch scrape job to internal server:', e));
+
         } else if (commandName === 'status') {
-            await interaction.reply({ content: 'Bot is running and operational.', ephemeral: true });
+            await interaction.reply({ content: 'Bot is running and operational.', flags: [MessageFlags.Ephemeral] });
         }
         console.log(`handleCommand: Finished processing command '${commandName}'.`);
+    }
+
+    private startHttpServer(): void {
+        const app = express();
+        const port = process.env.PORT || 8080;
+
+        app.use(express.json());
+
+        app.post('/scrape-job', (req, res) => {
+            const { channelId } = req.body;
+            if (!channelId) {
+                console.error('HTTP /scrape-job received without a channelId.');
+                return res.status(400).send({ error: 'channelId is required' });
+            }
+            
+            console.log(`HTTP /scrape-job received for channel ${channelId}. Kicking off background scrape.`);
+            res.status(202).send({ message: 'Scrape job accepted.' });
+
+            this.checkTours('manual', channelId).catch(error => {
+                console.error('Error during background scrape initiated via HTTP:', error);
+            });
+        });
+
+        app.get('/health', (req, res) => {
+            res.status(200).send({ status: 'ok' });
+        });
+
+        app.listen(port, () => {
+            console.log(`Internal HTTP server listening on port ${port}`);
+        });
     }
 } 
