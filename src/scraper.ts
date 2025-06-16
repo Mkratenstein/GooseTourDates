@@ -8,7 +8,7 @@ export interface Concert {
 
 export class Scraper {
     private browser: Browser | null = null;
-    private readonly url = 'https://www.goosetheband.com/tour';
+    private readonly url = 'https://www.songkick.com/artists/4219891-goose/calendar';
 
     private async initialize(): Promise<void> {
         console.log('Scraper: Initializing browser.');
@@ -27,14 +27,23 @@ export class Scraper {
         const page = await this.browser!.newPage();
         await page.goto(this.url, { waitUntil: 'networkidle2' });
 
+        try {
+            await page.waitForSelector('.event-listings-element', { timeout: 15000 });
+            console.log('Scraper: Found concert list container on Songkick.');
+        } catch (error) {
+            console.error('Scraper: Could not find concert list container on Songkick. The website structure may have changed.');
+            await page.close();
+            return [];
+        }
+
         const concerts = await page.evaluate(() => {
-            const concertElements = document.querySelectorAll('.shows-list-item');
+            const concertElements = document.querySelectorAll('.event-listings-element');
             const concertData: Concert[] = [];
 
             concertElements.forEach(element => {
-                const venue = element.querySelector('.show-venue a')?.textContent?.trim() ?? '';
-                const location = element.querySelector('.show-location')?.textContent?.trim() ?? '';
-                const date = element.querySelector('.show-date-short')?.textContent?.trim() ?? '';
+                const date = element.querySelector('time')?.textContent?.trim() ?? '';
+                const venue = element.querySelector('.venue-name a')?.textContent?.trim() ?? '';
+                const location = element.querySelector('.location-and-datetime-container .location span:last-child')?.textContent?.trim() ?? '';
                 
                 if (venue && location && date) {
                     concertData.push({ venue, location, date });
