@@ -29,13 +29,23 @@ export class Scraper {
 
         console.log('Scraper: Starting to scrape tour dates.');
         const page = await this.browser.newPage();
+
+        // Set a user agent to avoid basic bot detection
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+
         await page.goto(this.url, { waitUntil: 'networkidle2' });
 
         try {
+            // Wait for the main container of the event listings
             await page.waitForSelector('.event-listings-element', { timeout: 15000 });
             console.log('Scraper: Found concert list container on Songkick.');
         } catch (error) {
             console.error('Scraper: Could not find concert list container on Songkick. The website structure may have changed.');
+            
+            // Log the full page content for debugging
+            const pageContent = await page.content();
+            console.error('Scraper: Full page HTML:', pageContent);
+
             await page.close();
             return [];
         }
