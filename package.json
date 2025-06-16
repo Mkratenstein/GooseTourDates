@@ -2,9 +2,10 @@
   "name": "goosetourdates",
   "version": "1.0.0",
   "description": "A Discord bot that automatically scrapes and posts Goose tour dates to a specified Discord channel.",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec \"npx ts-node src/index.ts\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

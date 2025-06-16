@@ -95,4 +95,12 @@ data/*.json
 
 # Test data
 data/test/*.csv
-data/test/*.json 
+data/test/*.json
+
+# Compiled output
+/dist
+
+# Logs
+logs 
+
+OLD.env 
