@@ -52,27 +52,28 @@ logs_dir.mkdir(parents=True, exist_ok=True)
 
 # Configure logging to both file and console
 logger = logging.getLogger('discord_bot')
-logger.setLevel(logging.DEBUG)
+if not logger.handlers:
+    logger.setLevel(logging.DEBUG)
 
-# Create a rotating file handler (1MB max size, keep 5 backup files)
-log_file = logs_dir / "discord_bot.log"
-file_handler = RotatingFileHandler(
-    log_file,
-    maxBytes=1024*1024,  # 1MB
-    backupCount=5,
-    encoding='utf-8'
-)
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    # Create a rotating file handler (1MB max size, keep 5 backup files)
+    log_file = logs_dir / "discord_bot.log"
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=1024*1024,  # 1MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
-# Create console handler
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
-# Add handlers to logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+    # Add handlers to logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 # Now clean up old logs (logger is set up)
 def cleanup_old_logs():
@@ -160,6 +161,18 @@ class GooseTourBot:
             if not self.channel:
                 raise ChannelNotFoundError(f"Could not find channel with ID {DISCORD_CHANNEL_ID}")
             logger.info(f"Bot connected to channel: {self.channel.name}")
+
+            # Sync commands to the specific guild
+            if DISCORD_GUILD_ID:
+                guild = discord.Object(id=DISCORD_GUILD_ID)
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                logger.info(f"Commands synced to guild: {DISCORD_GUILD_ID}")
+            else:
+                # Sync commands globally if no guild ID is provided
+                await bot.tree.sync()
+                logger.info("Commands synced globally")
+            
         except Exception as e:
             logger.error(f"Setup failed: {e}")
             raise BotError(f"Bot setup failed: {e}")
@@ -302,23 +315,6 @@ async def on_ready():
 
         await goose_bot.setup()
         logger.debug("GooseTourBot setup completed")
-
-        guild = None
-        if DISCORD_GUILD_ID:
-            guild = discord.Object(id=DISCORD_GUILD_ID)
-
-        # Normal sync logic only
-        logger.debug("Syncing commands...")
-        if guild:
-            synced = await bot.tree.sync(guild=guild)
-            logger.info(f"Synced {len(synced)} command(s) to guild {DISCORD_GUILD_ID}")
-            for cmd in synced:
-                logger.debug(f"Synced command: {cmd.name}")
-        else:
-            synced = await bot.tree.sync()
-            logger.info(f"Synced {len(synced)} command(s) globally")
-            for cmd in synced:
-                logger.debug(f"Synced command: {cmd.name}")
     except Exception as e:
         logger.error(f"Bot startup failed: {e}\n{traceback.format_exc()}")
         sys.exit(1)
