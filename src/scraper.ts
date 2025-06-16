@@ -1,4 +1,5 @@
-import puppeteer, { Browser } from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer-core';
+import chrome from 'chrome-aws-lambda';
 
 export interface Concert {
     venue: string;
@@ -12,8 +13,9 @@ export class Scraper {
 
     private async initialize(): Promise<void> {
         this.browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            args: chrome.args,
+            executablePath: await chrome.executablePath,
+            headless: chrome.headless,
         });
     }
 

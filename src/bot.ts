@@ -44,32 +44,38 @@ export class Bot {
     private async checkTours(interaction?: Interaction): Promise<void> {
         try {
             if (interaction) {
-                await (interaction as any).reply({ content: 'Checking for new tour dates...', ephemeral: true });
+                // The initial reply is now handled by deferReply in the command handler
+                console.log('Checking for new tour dates (triggered by interaction)...');
             } else {
-                console.log('Checking for new tour dates...');
+                console.log('Checking for new tour dates (scheduled)...');
             }
             const scrapedConcerts = await this.scraper.scrapeTourDates();
             const savedConcerts = await this.database.getConcerts();
 
-            const newConcerts = scrapedConcerts.filter(sc => !savedConcerts.includes(sc.venue));
+            const newConcerts = scrapedConcerts.filter(sc => !savedConcerts.some(saved => saved.venue === sc.venue && saved.date === sc.date));
 
             if (newConcerts.length > 0) {
                 console.log(`Found ${newConcerts.length} new concerts!`);
                 await this.database.saveConcerts(newConcerts);
                 await this.postConcerts(newConcerts);
                 if (interaction) {
-                    await (interaction as any).followUp({ content: `Found and posted ${newConcerts.length} new concerts.`, ephemeral: true });
+                    await (interaction as any).editReply({ content: `Found and posted ${newConcerts.length} new concerts.` });
                 }
             } else {
                 console.log('No new concerts found.');
                 if (interaction) {
-                    await (interaction as any).followUp({ content: 'No new concerts found.', ephemeral: true });
+                    await (interaction as any).editReply({ content: 'No new concerts found.' });
                 }
             }
         } catch (error) {
             console.error('Error checking tours:', error);
-            if (interaction) {
-                await (interaction as any).followUp({ content: 'An error occurred while checking for tours.', ephemeral: true });
+            if (interaction?.isCommand()) {
+                const message = { content: 'An error occurred while checking for tours.', ephemeral: true };
+                if ((interaction as any).deferred || (interaction as any).replied) {
+                    await (interaction as any).followUp(message);
+                } else {
+                    await (interaction as any).reply(message);
+                }
             }
         } finally {
             await this.scraper.close();
@@ -119,6 +125,7 @@ export class Bot {
         const { commandName } = interaction;
 
         if (commandName === 'scrape') {
+            await interaction.deferReply({ ephemeral: true });
             await this.checkTours(interaction);
         } else if (commandName === 'status') {
             await interaction.reply({ content: 'Bot is running and operational.', ephemeral: true });

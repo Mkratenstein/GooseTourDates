@@ -15,17 +15,17 @@ export class DatabaseService {
         this.client = createClient(supabaseUrl, supabaseKey);
     }
 
-    async getConcerts(): Promise<string[]> {
+    async getConcerts(): Promise<Concert[]> {
         const { data, error } = await this.client
             .from('concerts')
-            .select('venue');
+            .select('venue, date, location');
 
         if (error) {
             console.error('Error fetching concerts:', error);
             return [];
         }
 
-        return data.map(c => c.venue);
+        return data;
     }
 
     async saveConcerts(concerts: Concert[]): Promise<void> {
