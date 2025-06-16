@@ -22,10 +22,26 @@ export class Bot {
             this.registerCommands();
         });
 
-        this.client.on('interactionCreate', (interaction) => {
+        this.client.on('interactionCreate', async (interaction) => {
             if (!interaction.isCommand()) return;
-            console.log(`Received interaction: ${interaction.commandName}`);
-            this.handleCommand(interaction);
+            console.log(`Received interaction: ${interaction.commandName} (${interaction.id})`);
+            try {
+                await this.handleCommand(interaction);
+            } catch (error) {
+                console.error(`Error handling interaction ${interaction.id}:`, error);
+                if (interaction.isRepliable()) {
+                    const message = { content: 'An error occurred while processing your command.', ephemeral: true };
+                    try {
+                        if (interaction.replied || interaction.deferred) {
+                            await interaction.followUp(message);
+                        } else {
+                            await interaction.reply(message);
+                        }
+                    } catch (e) {
+                        console.error(`Failed to send error reply for interaction ${interaction.id}:`, e);
+                    }
+                }
+            }
         });
 
         this.client.on('debug', (info) => console.log(`[DEBUG] ${info}`));
