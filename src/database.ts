@@ -47,6 +47,7 @@ export class DatabaseService {
 
         if (error) {
             console.error('Error saving concerts:', error);
+            throw new Error(`Failed to save concerts: ${error.message}`);
         } else {
             console.log('Database: Successfully saved concerts.');
         }
