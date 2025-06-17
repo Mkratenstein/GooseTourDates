@@ -89,15 +89,18 @@ export class Bot {
             const scrapedConcerts = await this.scraper.scrapeTourDates();
             const savedConcerts = await this.database.getConcerts();
 
-            const newConcerts = scrapedConcerts.filter(sc => {
-                const scrapedDate = new Date(sc.date);
-                return !savedConcerts.some(saved => {
-                    const savedDate = new Date(saved.date);
-                    return saved.venue === sc.venue &&
-                           savedDate.getUTCFullYear() === scrapedDate.getUTCFullYear() &&
-                           savedDate.getUTCMonth() === scrapedDate.getUTCMonth() &&
-                           savedDate.getUTCDate() === scrapedDate.getUTCDate();
-                });
+            // Create a set of unique keys for existing concerts for efficient lookup.
+            // A key is a combination of venue and date (YYYY-MM-DD).
+            const existingConcertKeys = new Set(savedConcerts.map(concert => {
+                // The date from the DB might be a full timestamp. We only want the date part in UTC.
+                const date = new Date(concert.date).toISOString().split('T')[0];
+                return `${concert.venue.trim()}|${date}`;
+            }));
+
+            const newConcerts = scrapedConcerts.filter(scrapedConcert => {
+                // The scraped date is already in YYYY-MM-DD format.
+                const key = `${scrapedConcert.venue.trim()}|${scrapedConcert.date}`;
+                return !existingConcertKeys.has(key);
             });
 
             // Sort new concerts by date in ascending order before processing
