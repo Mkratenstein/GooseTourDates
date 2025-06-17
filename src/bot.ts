@@ -89,7 +89,16 @@ export class Bot {
             const scrapedConcerts = await this.scraper.scrapeTourDates();
             const savedConcerts = await this.database.getConcerts();
 
-            const newConcerts = scrapedConcerts.filter(sc => !savedConcerts.some(saved => saved.venue === sc.venue && saved.date === sc.date));
+            const newConcerts = scrapedConcerts.filter(sc => {
+                const scrapedDate = new Date(sc.date);
+                return !savedConcerts.some(saved => {
+                    const savedDate = new Date(saved.date);
+                    return saved.venue === sc.venue &&
+                           savedDate.getUTCFullYear() === scrapedDate.getUTCFullYear() &&
+                           savedDate.getUTCMonth() === scrapedDate.getUTCMonth() &&
+                           savedDate.getUTCDate() === scrapedDate.getUTCDate();
+                });
+            });
 
             // Sort new concerts by date in ascending order before processing
             newConcerts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
