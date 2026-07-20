@@ -84,4 +84,36 @@ export class DatabaseService {
         console.log(`Database: Found ${data.length} concerts for date ${date}.`);
         return data as Concert[];
     }
+
+    /** Upsert singleton heartbeat row used by the health canary. */
+    async writeHeartbeat(): Promise<void> {
+        const now = new Date().toISOString();
+        const { error } = await this.client
+            .from('bot_heartbeat')
+            .upsert(
+                { id: 1, last_successful_check_at: now },
+                { onConflict: 'id' }
+            );
+
+        if (error) {
+            // Heartbeat must not fail the tour scrape path.
+            console.error('Database: Failed to write bot_heartbeat:', error.message);
+            return;
+        }
+        console.log(`Database: Wrote bot_heartbeat at ${now}.`);
+    }
+
+    async getHeartbeat(): Promise<{ last_successful_check_at: string } | null> {
+        const { data, error } = await this.client
+            .from('bot_heartbeat')
+            .select('last_successful_check_at')
+            .eq('id', 1)
+            .maybeSingle();
+
+        if (error) {
+            console.error('Database: Failed to read bot_heartbeat:', error.message);
+            return null;
+        }
+        return data;
+    }
 }

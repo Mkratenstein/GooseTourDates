@@ -8,6 +8,8 @@
     "prestart": "npm run build",
     "start": "node dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec \"npx ts-node src/index.ts\"",
+    "canary": "ts-node src/health/canary.ts",
+    "canary:issue": "ts-node src/health/manage-issue.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

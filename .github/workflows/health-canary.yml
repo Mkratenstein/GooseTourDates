@@ -1,0 +1,61 @@
+name: Health Canary
+
+on:
+  schedule:
+    # Offset from bot cron (0 */4) to reduce double-post races
+    - cron: '30 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tour sync canary
+        id: canary
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: npx ts-node src/health/canary.ts
+
+      - name: Upload canary-result.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-result
+          path: canary-result.json
+          if-no-files-found: warn
+
+      - name: Manage sticky GitHub Issue
+        if: always() && hashFiles('canary-result.json') != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npx ts-node src/health/manage-issue.ts
+
+      - name: Fail job if canary failed
+        if: steps.canary.outcome == 'failure'
+        run: |
+          echo "Canary exited non-zero. See canary-result.json artifact and any open health-canary issue."
+          exit 1

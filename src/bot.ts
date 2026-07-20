@@ -4,6 +4,7 @@ import express from 'express';
 import { Scraper, Concert } from './scraper';
 import { DatabaseService } from './database';
 import cron from 'node-cron';
+import { formatConcertAnnouncement, concertKey } from './announce';
 
 export class Bot {
     private client = new Client({
@@ -92,14 +93,11 @@ export class Bot {
             // Create a set of unique keys for existing concerts for efficient lookup.
             // A key is a combination of venue and date (YYYY-MM-DD).
             const existingConcertKeys = new Set(savedConcerts.map(concert => {
-                // The date from the DB might be a full timestamp. We only want the date part in UTC.
-                const date = new Date(concert.date).toISOString().split('T')[0];
-                return `${concert.venue.trim()}|${date}`;
+                return concertKey(concert.venue, String(concert.date));
             }));
 
             const newConcerts = scrapedConcerts.filter(scrapedConcert => {
-                // The scraped date is already in YYYY-MM-DD format.
-                const key = `${scrapedConcert.venue.trim()}|${scrapedConcert.date}`;
+                const key = concertKey(scrapedConcert.venue, scrapedConcert.date);
                 return !existingConcertKeys.has(key);
             });
 
@@ -115,6 +113,8 @@ export class Bot {
                 console.log('checkTours: No new concerts found.');
                 statusMessage = 'Scrape complete. No new concerts found.';
             }
+
+            await this.database.writeHeartbeat();
         } catch (error) {
             console.error('Error checking tours:', error);
             statusMessage = 'An error occurred while checking for tours. Please check the logs.';
@@ -146,31 +146,7 @@ export class Bot {
         }
 
         for (const concert of concerts) {
-            // Re-format the date to be more readable, e.g., "September 17, 2025"
-            const date = new Date(`${concert.date}T12:00:00Z`); // Use noon UTC to avoid timezone issues
-            const formattedDate = date.toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric',
-                timeZone: 'UTC' 
-            });
-
-            const messageParts = [
-                'Goose the Organization has announced a new show!',
-                '',
-                formattedDate,
-                `${concert.venue} | ${concert.location}`
-            ];
-
-            if (concert.details) {
-                messageParts.push(concert.details);
-            }
-
-            messageParts.push('');
-            messageParts.push(`🎫 tickets: https://link.seated.com/${concert.id}`);
-
-            const message = messageParts.join('\n');
-
+            const message = formatConcertAnnouncement(concert);
             await channel.send(message);
             console.log(`postConcerts: Successfully posted announcement for ${concert.venue}.`);
         }
