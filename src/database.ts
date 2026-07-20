@@ -18,24 +18,40 @@ export class DatabaseService {
 
     async getConcerts(): Promise<Concert[]> {
         console.log('Database: Fetching concerts.');
-        const { data, error } = await this.client
-            .from('concerts')
-            .select('*');
+        const pageSize = 1000;
+        const all: Concert[] = [];
+        let from = 0;
 
-        if (error) {
-            console.error('Error fetching concerts:', error);
-            return [];
+        while (true) {
+            const to = from + pageSize - 1;
+            const { data, error } = await this.client
+                .from('concerts')
+                .select('*')
+                .range(from, to);
+
+            if (error) {
+                console.error('Error fetching concerts:', error);
+                return all.length > 0 ? all : [];
+            }
+
+            const page = data || [];
+            all.push(...page);
+
+            if (page.length < pageSize) {
+                break;
+            }
+            from += pageSize;
         }
 
-        console.log(`Database: Found ${data.length} concerts.`);
-        return data;
+        console.log(`Database: Found ${all.length} concerts.`);
+        return all;
     }
 
     async saveConcerts(concerts: Concert[]): Promise<void> {
         console.log(`Database: Saving ${concerts.length} new concerts.`);
         const records = concerts.map(c => ({
             id: c.id,
-            venue: c.venue,
+            venue: (c.venue || '').trim(),
             location: c.location,
             date: c.date,
             details: c.details,
@@ -68,4 +84,4 @@ export class DatabaseService {
         console.log(`Database: Found ${data.length} concerts for date ${date}.`);
         return data as Concert[];
     }
-} 
+}

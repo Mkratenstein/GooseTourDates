@@ -49,7 +49,7 @@ export class Scraper {
                     return {
                         id: event.id,
                         date: attributes['starts-at-date-local'],
-                        venue: attributes['venue-name'],
+                        venue: (attributes['venue-name'] || '').trim(),
                         location: attributes['formatted-address'],
                         details: attributes.details || undefined,
                     };
@@ -68,4 +68,4 @@ export class Scraper {
         // No browser to close
         console.log('Scraper closed (API mode).');
     }
-} 
+}
